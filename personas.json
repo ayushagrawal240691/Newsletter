@@ -1,0 +1,26 @@
+{
+  "personas": {
+    "Startup Founder": {
+      "interests": {
+        "AI & Machine Learning": {"query": "artificial intelligence OR \"machine learning\" OR LLM"},
+        "Venture Capital": {"query": "venture capital funding round startup"},
+        "SaaS & Product": {"query": "SaaS product launch growth"},
+        "Hacker News": {"feeds": ["https://hnrss.org/frontpage"]}
+      }
+    },
+    "Climate & Energy Analyst": {
+      "interests": {
+        "Renewable Energy": {"query": "solar OR wind OR \"renewable energy\""},
+        "Climate Policy": {"query": "climate policy COP carbon"},
+        "EVs & Batteries": {"query": "electric vehicles battery storage"}
+      }
+    },
+    "Retail Investor": {
+      "interests": {
+        "Markets": {"query": "stock market S&P 500 Nasdaq"},
+        "Central Banks": {"query": "Federal Reserve interest rates inflation"},
+        "Crypto": {"query": "bitcoin ethereum crypto"}
+      }
+    }
+  }
+}

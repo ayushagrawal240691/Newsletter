@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live News Dashboard</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#14171a;--mute:#667085;--line:#e4e7ec;--accent:#2563eb;--new:#16a34a}
+@media(prefers-color-scheme:dark){:root{--bg:#0e1116;--card:#171b22;--ink:#e6e8eb;--mute:#8b94a3;--line:#262c36;--accent:#60a5fa;--new:#4ade80}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,sans-serif}
+header{position:sticky;top:0;z-index:2;background:var(--card);border-bottom:1px solid var(--line);padding:12px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+h1{font-size:17px;margin:0}select,button,input{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+button{cursor:pointer}button:hover{border-color:var(--accent)}
+.live{margin-left:auto;color:var(--mute);font-size:13px;display:flex;gap:6px;align-items:center}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--mute)}.dot.on{background:var(--new);animation:p 2s infinite}
+@keyframes p{50%{opacity:.35}}
+main{max-width:860px;margin:0 auto;padding:16px}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.chip{border-radius:99px;padding:4px 12px;font-size:13px}.chip.act{background:var(--accent);border-color:var(--accent);color:#fff}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:10px}
+.card.fresh{border-left:4px solid var(--new)}
+.card a{color:var(--ink);text-decoration:none;font-weight:600;font-size:16px}.card a:hover{color:var(--accent)}
+.meta{color:var(--mute);font-size:12.5px;margin-top:4px;display:flex;gap:8px;flex-wrap:wrap}
+.tag{color:var(--accent)}.sum{color:var(--mute);margin:6px 0 0;font-size:14px}
+.empty,.warn{color:var(--mute);text-align:center;padding:40px 0}.warn{color:#b45309;padding:8px 0;font-size:13px;text-align:left}
+dialog{border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);max-width:460px;width:92%}
+dialog label{display:block;margin:10px 0 4px;font-size:13px;color:var(--mute)}dialog input,dialog textarea{width:100%}
+textarea{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:6px 10px;min-height:90px}
+</style>
+</head>
+<body>
+<header>
+  <h1>📰 Live News</h1>
+  <select id="persona" aria-label="Persona"></select>
+  <button id="add">+ Persona</button>
+  <button id="del" title="Delete persona">🗑</button>
+  <button id="refresh">↻ Refresh</button>
+  <span class="live"><span class="dot" id="dot"></span><span id="state">connecting…</span></span>
+</header>
+<main>
+  <div class="chips" id="chips"></div>
+  <div id="warn"></div>
+  <div id="feed"></div>
+</main>
+<dialog id="dlg"><form method="dialog" id="form">
+  <h3>New persona</h3>
+  <label>Name</label><input id="pname" required placeholder="e.g. Cybersecurity Lead">
+  <label>Interests (one per line — search terms; optionally "Label: terms")</label>
+  <textarea id="pint" required placeholder="Ransomware&#10;Zero-day: zero-day vulnerability OR CVE"></textarea>
+  <p><button value="ok">Save</button> <button value="cancel" formnovalidate>Cancel</button></p>
+</form></dialog>
+<script>
+const $=id=>document.getElementById(id);
+let personas={},persona="",interest="",items=[],fresh=new Set(),es=null;
+const safeUrl=u=>/^https?:\/\//i.test(u)?u:"#";
+const ago=ts=>{const s=Math.max(0,Date.now()/1000-ts);
+  if(s<60)return"just now";if(s<3600)return Math.floor(s/60)+"m ago";
+  if(s<86400)return Math.floor(s/3600)+"h ago";return Math.floor(s/86400)+"d ago"};
+function el(tag,cls,text){const e=document.createElement(tag);if(cls)e.className=cls;if(text!=null)e.textContent=text;return e}
+
+async function loadPersonas(keep){
+  personas=await (await fetch("/api/personas")).json();
+  const names=Object.keys(personas);
+  persona=keep&&names.includes(keep)?keep:(names.includes(persona)?persona:names[0]||"");
+  $("persona").replaceChildren(...names.map(n=>{const o=el("option",null,n);o.value=n;o.selected=n===persona;return o}));
+  interest="";await loadNews();
+}
+async function loadNews(){
+  if(!persona){$("feed").replaceChildren(el("div","empty","No personas yet — add one."));return}
+  const r=await (await fetch("/api/news?persona="+encodeURIComponent(persona))).json();
+  items=r.items;renderChips();render();
+  const bad=Object.entries(r.status).filter(([,s])=>!s.ok).map(([k,s])=>k.split("/")[1]+": "+s.error);
+  $("warn").replaceChildren(...(bad.length?[el("div","warn","⚠ Some sources failed — "+bad.join(" | "))]:[]));
+}
+function renderChips(){
+  const names=["All",...Object.keys(personas[persona]?.interests||{})];
+  $("chips").replaceChildren(...names.map(n=>{
+    const b=el("button","chip"+((n==="All"&&!interest)||n===interest?" act":""),n);
+    b.onclick=()=>{interest=n==="All"?"":n;renderChips();render()};return b}));
+}
+function render(){
+  const list=items.filter(a=>!interest||a.interest===interest);
+  if(!list.length){$("feed").replaceChildren(el("div","empty","Waiting for the first headlines…"));return}
+  $("feed").replaceChildren(...list.map(a=>{
+    const c=el("div","card"+(fresh.has(a.id)?" fresh":""));
+    const l=el("a",null,a.title);l.href=safeUrl(a.url);l.target="_blank";l.rel="noopener noreferrer";c.append(l);
+    const m=el("div","meta");m.append(el("span","tag",a.interest),el("span",null,a.source),el("span",null,ago(a.ts)));c.append(m);
+    if(a.summary&&a.summary!==a.title)c.append(el("p","sum",a.summary.slice(0,220)));
+    return c}));
+}
+function connect(){
+  es=new EventSource("/api/stream");
+  es.onopen=()=>{$("dot").className="dot on";$("state").textContent="live"};
+  es.onerror=()=>{$("dot").className="dot";$("state").textContent="reconnecting…"};
+  es.onmessage=e=>{
+    const incoming=JSON.parse(e.data).filter(a=>a.persona===persona);
+    if(!incoming.length)return;
+    const have=new Set(items.map(a=>a.id));
+    for(const a of incoming)if(!have.has(a.id)){items.push(a);fresh.add(a.id)}
+    items.sort((a,b)=>b.ts-a.ts);render();
+  };
+}
+$("persona").onchange=e=>{persona=e.target.value;interest="";fresh.clear();loadNews()};
+$("refresh").onclick=()=>fetch("/api/refresh",{method:"POST"});
+$("add").onclick=()=>$("dlg").showModal();
+$("del").onclick=async()=>{if(persona&&confirm("Delete persona '"+persona+"'?")){
+  await fetch("/api/personas/"+encodeURIComponent(persona),{method:"DELETE"});persona="";loadPersonas()}};
+$("form").onsubmit=async e=>{
+  if(e.submitter?.value!=="ok")return;
+  const interests={};
+  $("pint").value.split("\n").map(s=>s.trim()).filter(Boolean).forEach(line=>{
+    const i=line.indexOf(":");const [label,query]=i>0&&i<40?[line.slice(0,i).trim(),line.slice(i+1).trim()]:[line,line];
+    interests[label]={query};});
+  await fetch("/api/personas",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({name:$("pname").value.trim(),interests})});
+  const n=$("pname").value.trim();$("form").reset();loadPersonas(n);
+};
+setInterval(render,60000); // keep "5m ago" labels current
+loadPersonas().then(connect);
+</script>
+</body>
+</html>
