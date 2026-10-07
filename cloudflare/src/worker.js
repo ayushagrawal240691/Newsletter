@@ -1,7 +1,11 @@
 // Routes
-//   GET /api/news/<term>   Bing News + Google News + GDELT for one interest, merged
-//   GET /api/pool/<n>      a small batch (2) of publisher RSS feeds (BBC, NYT, Guardian, ...)
-//   GET /api/og?url=...    the article's social-share image (og:image), for stories without a photo
+//   GET /api/news/<term>          Bing + Google + GDELT for one interest, merged
+//   GET /api/news/<CC>/<term>     same, local to country CC (e.g. IN) plus the world's most-covered stories (scope: "intl")
+//   GET /api/pools/<CC>           which publisher-feed batches to fetch for a visitor from CC
+//   GET /api/pool/<key>           one batch (2) of publisher RSS feeds, e.g. g-0 or IN-1
+//   GET /api/countries, /api/geo  country list; the visitor's own country (from Cloudflare)
+//   GET /api/og/<base64url(url)>  the article's social-share image (og:image), for stories without a photo
+// (Everything is in the URL path rather than the query string.)
 // Upstream responses are cached at Cloudflare's edge (cf.cacheTtl; unlike the Cache API this also
 // works on *.workers.dev). Work is split across small requests to stay inside the free plan's CPU limit.
 
@@ -11,7 +15,8 @@ const MAX_ITEMS = 30;
 const HEADERS = { "User-Agent": "Mozilla/5.0 (compatible; NewsDashboard/1.0)", Accept: "application/rss+xml, application/xml, text/xml, text/html, */*" };
 const CF = { cacheTtl: CACHE_SECONDS, cacheEverything: true };
 
-import { FEEDS, POOL_SIZE } from "./feeds.js";
+import { COUNTRIES, poolKeys, poolFeeds } from "./feeds.js";
+const COUNTRY = Object.fromEntries(COUNTRIES.map((c) => [c.code, c]));
 
 // ---------- text helpers ----------
 const ENTITIES = { "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#39;": "'", "&apos;": "'" };
@@ -102,19 +107,25 @@ export function parseRss(xml, { source: fixedSource = "", summary = false, limit
 
 export function parseGdelt(text) {
   const out = [];
+  let n = 0;
   for (const a of JSON.parse(text).articles || []) {
     const s = a.seendate || "";   // 20261007T101500Z
     const ts = Date.parse(`${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}T${s.slice(9, 11)}:${s.slice(11, 13)}:${s.slice(13, 15)}Z`);
     if (!a.title || !a.url || !isEnglish(a.title) || (a.language && a.language !== "English")) continue;
-    out.push({ title: a.title, url: a.url, source: (a.domain || "").replace(/^www\./, ""), image: upgradeImage(a.socialimage || ""), ts: Math.floor((ts || Date.now()) / 1000) });
+    out.push({ title: a.title, url: a.url, source: (a.domain || "").replace(/^www\./, ""), image: upgradeImage(a.socialimage || ""), ts: Math.floor((ts || Date.now()) / 1000), rank: n++ });
   }
   return out;
 }
 
 // ---------- fetching ----------
-const bingUrl = (q) => `https://www.bing.com/news/search?q=${encodeURIComponent(q)}&format=rss&setmkt=en-US&setlang=en&qft=sortbydate%3d%221%22`;
-const googleUrl = (q, days) => `https://news.google.com/rss/search?q=${encodeURIComponent(`${q} when:${days}d`)}&hl=en-US&gl=US&ceid=US:en`;
-const gdeltUrl = (q) => `https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(`${q} sourcelang:english`)}&mode=artlist&format=json&maxrecords=30&sort=datedesc&timespan=2d`;
+const bingUrl = (q, c) => `https://www.bing.com/news/search?q=${encodeURIComponent(q)}&format=rss&setmkt=${c?.bing ? "en-" + c.code : "en-US"}&setlang=en&qft=sortbydate%3d%221%22`;
+const googleUrl = (q, days, c) => {
+  const cc = c?.gnews ? c.code : "US";
+  return `https://news.google.com/rss/search?q=${encodeURIComponent(`${q} when:${days}d`)}&hl=en-${cc}&gl=${cc}&ceid=${cc}:en`;
+};
+// c given  -> English-language outlets located in that country; sort=hybridrel (relevance + source popularity) for "world" lookups.
+const gdeltUrl = (q, { country, sort = "datedesc" } = {}) =>
+  `https://api.gdeltproject.org/api/v2/doc/doc?query=${encodeURIComponent(`${q} sourcelang:english${country ? " sourcecountry:" + country.name.replace(/\s+/g, "").toLowerCase() : ""}`)}&mode=artlist&format=json&maxrecords=30&sort=${sort}&timespan=2d`;
 
 async function pull(name, urls, parse) {
   let error = "";
@@ -133,7 +144,7 @@ async function pull(name, urls, parse) {
 }
 
 const titleKey = (t) => t.toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 60);
-export function mergeItems(...lists) {
+export function mergeItems(lists, limit = MAX_ITEMS) {
   const byTitle = new Map();
   for (const it of lists.flat()) {
     const k = titleKey(it.title), prev = byTitle.get(k);
@@ -141,41 +152,69 @@ export function mergeItems(...lists) {
     else byTitle.set(k, { ...(!prev.image && it.image ? it : prev), ts: Math.max(it.ts, prev.ts) });
   }
   // stories with a photo first, newest first within each group
-  return [...byTitle.values()].sort((a, b) => (!!b.image - !!a.image) || b.ts - a.ts).slice(0, MAX_ITEMS);
+  return [...byTitle.values()].sort((a, b) => (!!b.image - !!a.image) || b.ts - a.ts).slice(0, limit);
 }
 
 const json = (body, status = 200, extra = {}) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json", ...extra } });
 
+// "/api/news/IN/machine%20learning" -> {country: "IN", term: "machine learning"}; "/api/news/ai" -> no country.
+function parseNewsPath(url) {
+  const rest = url.pathname.replace(/^\/api\/news\/?/, "");
+  const parts = rest.split("/");
+  let c = null, raw = rest;
+  if (parts.length >= 2 && /^[A-Za-z]{2}$/.test(parts[0])) { c = COUNTRY[parts[0].toUpperCase()] || null; raw = parts.slice(1).join("/"); }
+  try { raw = decodeURIComponent(raw); } catch {}
+  return { country: c, term: (raw || url.searchParams.get("q") || "").trim().toLowerCase().replace(/\s+/g, " ") };
+}
+
 export async function handleNews(request) {
   const url = new URL(request.url);
-  // Accept /api/news/<term> (preferred) or /api/news?q=<term>.
-  const raw = decodeURIComponent(url.pathname.replace(/^\/api\/news\/?/, "")) || url.searchParams.get("q") || "";
-  const q = raw.trim().toLowerCase().replace(/\s+/g, " ");
+  const { country, term: q } = parseNewsPath(url);
   if (!q || q.length > MAX_QUERY_LEN)
     return json({ error: "search term required (max 100 chars)", received: { path: url.pathname, search: url.search } }, 400);
 
-  const jobs = [
-    pull("bing", [bingUrl(q)], (t) => parseRss(t)),
-    pull("google", [googleUrl(q, 1), googleUrl(q, 7)], (t) => parseRss(t)),
-  ];
-  if (q.length > 3) jobs.push(pull("gdelt", [gdeltUrl(q)], parseGdelt));   // GDELT rejects very short phrases
-  const results = await Promise.all(jobs);
-  const items = mergeItems(...results.map((r) => r.items));
-  const errors = results.map((r) => r.error).filter(Boolean);
+  // Countries without an English Google/Bing edition: add the country name so results are about it.
+  const qLocal = country && !country.gnews ? `${q} ${country.name.toLowerCase()}` : q;
+  const jobs = {
+    bing: pull("bing", [bingUrl(qLocal, country)], (t) => parseRss(t)),
+    google: pull("google", [googleUrl(qLocal, 1, country), googleUrl(qLocal, 7, country)], (t) => parseRss(t)),
+  };
+  if (q.length > 3) {                                              // GDELT rejects very short phrases
+    jobs.gdelt = pull("gdelt", [gdeltUrl(q, { country })], parseGdelt);
+    if (country) jobs.world = pull("gdelt-world", [gdeltUrl(q, { sort: "hybridrel" })], parseGdelt);
+  }
+  const done = Object.fromEntries(await Promise.all(Object.entries(jobs).map(async ([k, p]) => [k, await p])));
+  const local = mergeItems([done.bing.items, done.google.items, done.gdelt?.items || []]);
+  let items = local;
+  if (country) {                                                   // 70-80% local / 20-30% world is assembled in the browser
+    const have = new Set(local.map((i) => titleKey(i.title)));
+    const world = mergeItems([done.world?.items || []], 12).filter((i) => !have.has(titleKey(i.title)));
+    items = [...local.map((i) => ({ ...i, scope: "local" })), ...world.map((i) => ({ ...i, scope: "intl" }))];
+  }
+  const errors = Object.values(done).map((r) => r.error).filter(Boolean);
   if (!items.length && errors.length) return json({ error: errors.join(", ") }, 502);
-  return json({ query: q, fetchedAt: Date.now(), items, errors }, 200, { "Cache-Control": `public, max-age=${CACHE_SECONDS}` });
+  return json({ query: q, country: country?.code || "", fetchedAt: Date.now(), items, errors }, 200, { "Cache-Control": `public, max-age=${CACHE_SECONDS}` });
 }
 
 export async function handlePool(request) {
-  const n = Number(new URL(request.url).pathname.split("/").pop());
-  const group = FEEDS.slice(n * POOL_SIZE, n * POOL_SIZE + POOL_SIZE);
-  if (!Number.isInteger(n) || n < 0 || !group.length) return json({ error: "unknown pool" }, 404);
-  const results = await Promise.all(group.map((f) =>
-    pull(f.name, [f.url], (t) => parseRss(t, { source: f.name, summary: true, limit: 20 }))));
+  const group = poolFeeds(decodeURIComponent(new URL(request.url).pathname.split("/").pop()));
+  if (!group) return json({ error: "unknown pool" }, 404);
+  const results = await Promise.all(group.map(async (f) => {
+    const r = await pull(f.name, [f.url], (t) => parseRss(t, { source: f.name, summary: true, limit: 20 }));
+    return { ...r, items: r.items.map((i) => ({ ...i, home: f.home })) };
+  }));
   return json({ items: results.flatMap((r) => r.items), failed: results.map((r) => r.error).filter(Boolean) }, 200,
     { "Cache-Control": "public, max-age=600" });
 }
+
+export function handlePools(request) {
+  const c = new URL(request.url).pathname.split("/").pop().toUpperCase();
+  return json({ keys: poolKeys(COUNTRY[c] ? c : "") }, 200, { "Cache-Control": "public, max-age=3600" });
+}
+export const handleCountries = () =>
+  json(COUNTRIES.map(({ code, name, gnews }) => ({ code, name, edition: gnews })), 200, { "Cache-Control": "public, max-age=86400" });
+export const handleGeo = (request) => json({ country: request.cf?.country || "" }, 200, { "Cache-Control": "no-store" });
 
 // ---------- og:image lookup ----------
 function safeTarget(u) {
@@ -209,7 +248,12 @@ export function extractOgImage(html, base) {
   return "";
 }
 export async function handleOg(request) {
-  const target = safeTarget(new URL(request.url).searchParams.get("url") || "");
+  let raw = "";
+  try {                                                            // /api/og/<base64url(url)>
+    const b64 = new URL(request.url).pathname.split("/").pop().replace(/-/g, "+").replace(/_/g, "/");
+    raw = new TextDecoder().decode(Uint8Array.from(atob(b64), (ch) => ch.charCodeAt(0)));
+  } catch {}
+  const target = safeTarget(raw);
   if (!target) return json({ error: "bad url" }, 400);
   let image = "";
   try {
@@ -225,7 +269,10 @@ export default {
     if (request.method === "GET") {
       if (pathname === "/api/news" || pathname.startsWith("/api/news/")) return handleNews(request);
       if (pathname.startsWith("/api/pool/")) return handlePool(request);
-      if (pathname === "/api/og") return handleOg(request);
+      if (pathname.startsWith("/api/pools/")) return handlePools(request);
+      if (pathname === "/api/countries") return handleCountries();
+      if (pathname === "/api/geo") return handleGeo(request);
+      if (pathname.startsWith("/api/og/")) return handleOg(request);
     }
     return env.ASSETS.fetch(request);
   },

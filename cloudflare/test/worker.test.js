@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseRss, parseGdelt, mergeItems, handleNews, handlePool, handleOg, extractOgImage, isEnglish } from "../src/worker.js";
-import { FEEDS, POOL_COUNT } from "../src/feeds.js";
+import worker, { parseRss, parseGdelt, mergeItems, handleNews, handlePool, handlePools, handleOg, extractOgImage, isEnglish } from "../src/worker.js";
+import { FEEDS, COUNTRIES, poolKeys, poolFeeds } from "../src/feeds.js";
 
 const GOOGLE = `<rss><channel>
 <item><title>Chip &amp; AI boom - Example Wire</title><link>https://example.com/1</link>
@@ -62,9 +62,9 @@ test("parseGdelt: reads articles, keeps photo, drops non-English", () => {
 });
 
 test("mergeItems: de-dupes by title, keeps the copy with a photo, photos first", () => {
-  const out = mergeItems(
+  const out = mergeItems([
     [{ title: "Same story", url: "g", image: "", ts: 5 }, { title: "Only text", url: "t", image: "", ts: 9 }],
-    [{ title: "Same  story!", url: "b", image: "https://i/x.jpg", ts: 4 }]);
+    [{ title: "Same  story!", url: "b", image: "https://i/x.jpg", ts: 4 }]]);
   assert.equal(out.length, 2);
   assert.equal(out[0].url, "b");           // photo copy wins and sorts first
   assert.equal(out[0].ts, 5);              // newest timestamp kept
@@ -112,15 +112,81 @@ test("handleNews: widens Google to 7 days when 1 day is empty; 502 when everythi
   assert.match((await r.json()).error, /bing 503, google 503, gdelt 503/);
 });
 
-test("handlePool: fetches 2 feeds per batch, reports failures, 404 for unknown batch", async () => {
-  assert.equal(POOL_COUNT, Math.ceil(FEEDS.length / 2));
-  globalThis.fetch = async (url) => url === FEEDS[1].url ? new Response("x", { status: 500 }) : new Response(PUBLISHER);
-  const body = await (await handlePool(req("/api/pool/0"))).json();
-  assert.equal(body.items.length, 5);                                     // all 5 stories from the one healthy feed
-  assert.equal(body.items[0].source, FEEDS[0].name);
-  assert.deepEqual(body.failed, [`${FEEDS[1].name} 500`]);
-  assert.equal((await handlePool(req("/api/pool/99"))).status, 404);
-  assert.equal((await handlePool(req("/api/pool/abc"))).status, 404);
+test("pool keys: international batches for everyone, plus the visitor's own country's feeds", () => {
+  const intl = FEEDS.filter((f) => f.intl).length;
+  assert.equal(poolKeys("").length, Math.ceil(intl / 2));
+  assert.deepEqual(poolKeys("IN").filter((k) => k.startsWith("IN-")), ["IN-0", "IN-1", "IN-2"]);   // 5 Indian feeds, 2 per batch
+  assert.equal(poolKeys("BR").length, poolKeys("").length);                                      // no own feeds -> intl only
+  assert.ok(poolFeeds("g-0").every((f) => f.intl) && poolFeeds("IN-0").every((f) => f.home === "IN"));
+  assert.equal(poolFeeds("IN-9"), null);
+});
+
+test("handlePool: fetches 2 feeds, tags stories with the publisher's home country, reports failures", async () => {
+  const [a, b] = poolFeeds("g-0");
+  globalThis.fetch = async (url) => url === b.url ? new Response("x", { status: 500 }) : new Response(PUBLISHER);
+  const body = await (await handlePool(req("/api/pool/g-0"))).json();
+  assert.equal(body.items.length, 5);
+  assert.ok(body.items.every((i) => i.home === a.home && i.source === a.name));
+  assert.deepEqual(body.failed, [`${b.name} 500`]);
+  assert.equal((await handlePool(req("/api/pool/zzz-9"))).status, 404);
+  assert.deepEqual(await (await handlePools(req("/api/pools/in"))).json(), { keys: poolKeys("IN") });
+  assert.deepEqual((await (await handlePools(req("/api/pools/xx"))).json()).keys, poolKeys(""));
+});
+
+const GD = (title, img = "") => JSON.stringify({ articles: [{ url: "https://w.example/" + title.length, title, seendate: "20261007T101500Z", socialimage: img, domain: "w.example", language: "English" }] });
+function countryFetch(log) {
+  return async (url) => {
+    log.push(url);
+    if (url.includes("gdeltproject")) return new Response(url.includes("sourcecountry") ? GD("Local gdelt story about AI regulation") : GD("World headline everyone covers", "https://w.example/p.jpg"));
+    return new Response(url.includes("bing.com") ? BING() : GOOGLE);
+  };
+}
+
+test("country: India uses the Indian Google/Bing editions + GDELT sourcecountry, and adds world stories", async () => {
+  const log = [];
+  globalThis.fetch = countryFetch(log);
+  const body = await (await handleNews(req("/api/news/IN/machine%20learning"))).json();
+  const dec = log.map(decodeURIComponent);
+  assert.ok(dec.some((u) => u.includes("news.google.com") && u.includes("gl=IN") && u.includes("ceid=IN:en") && u.includes("hl=en-IN")));
+  assert.ok(dec.some((u) => u.includes("bing.com") && u.includes("setmkt=en-IN")));
+  assert.ok(dec.some((u) => u.includes("sourcecountry:india") && u.includes("sort=datedesc")));
+  assert.ok(dec.some((u) => u.includes("gdeltproject") && !u.includes("sourcecountry") && u.includes("sort=hybridrel")));
+  assert.ok(!dec.some((u) => u.includes("q=machine learning india")));                         // IN has an edition: term not polluted
+  assert.equal(body.country, "IN");
+  const scopes = Object.fromEntries(body.items.map((i) => [i.title, i.scope]));
+  assert.equal(scopes["World headline everyone covers"], "intl");
+  assert.equal(scopes["Bing story"], "local");
+  assert.equal(scopes["Local gdelt story about AI regulation"], "local");
+});
+
+test("country: no English edition (Brazil) -> US edition + country name in the query + GDELT sourcecountry", async () => {
+  const log = [];
+  globalThis.fetch = countryFetch(log);
+  await handleNews(req("/api/news/BR/fintech"));
+  const dec = log.map(decodeURIComponent);
+  assert.ok(dec.some((u) => u.includes("news.google.com") && u.includes("q=fintech brazil") && u.includes("gl=US")));
+  assert.ok(dec.some((u) => u.includes("bing.com") && u.includes("q=fintech brazil") && u.includes("setmkt=en-US")));
+  assert.ok(dec.some((u) => u.includes("sourcecountry:brazil")));
+});
+
+test("country: unknown code is ignored; a 2-letter term alone is a term, not a country", async () => {
+  const log = [];
+  globalThis.fetch = countryFetch(log);
+  const a = await (await handleNews(req("/api/news/ZZ/climate"))).json();
+  assert.equal(a.country, ""); assert.ok(a.items.every((i) => !i.scope));
+  const b = await (await handleNews(req("/api/news/ai"))).json();
+  assert.equal(b.query, "ai"); assert.equal(b.country, "");
+  const c = await (await handleNews(req("/api/news/US/ai"))).json();
+  assert.equal(c.query, "ai"); assert.equal(c.country, "US");
+});
+
+test("countries + geo endpoints", async () => {
+  const list = await (await worker.fetch(req("/api/countries"), {})).json();
+  assert.ok(list.length > 40 && list.find((c) => c.code === "IN" && c.edition) && list.find((c) => c.code === "BR" && !c.edition));
+  assert.equal(new Set(COUNTRIES.map((c) => c.code)).size, COUNTRIES.length);                  // no duplicate codes
+  const geo = await worker.fetch(Object.assign(req("/api/geo"), { cf: { country: "IN" } }), {});
+  assert.deepEqual(await geo.json(), { country: "IN" });
+  assert.equal(geo.headers.get("Cache-Control"), "no-store");
 });
 
 test("og:image: extraction handles attribute order and relative URLs", () => {
@@ -130,10 +196,11 @@ test("og:image: extraction handles attribute order and relative URLs", () => {
 });
 
 test("handleOg: returns the photo, refuses unsafe targets", async () => {
+  const b64 = (u) => Buffer.from(u).toString("base64url");
   globalThis.fetch = async () => new Response(`<html><head><meta property="og:image" content="https://cdn.example/hero.jpg"></head><body>`);
-  assert.equal((await (await handleOg(req("/api/og?url=" + encodeURIComponent("https://news.example/story")))).json()).image, "https://cdn.example/hero.jpg");
+  assert.equal((await (await handleOg(req("/api/og/" + b64("https://news.example/story?id=1&x=%2F")))).json()).image, "https://cdn.example/hero.jpg");
   for (const bad of ["http://news.example/x", "https://127.0.0.1/x", "https://localhost/x", "https://news.google.com/rss/articles/abc", "not a url", "https://x.workers.dev/"])
-    assert.equal((await handleOg(req("/api/og?url=" + encodeURIComponent(bad)))).status, 400, bad);
+    assert.equal((await handleOg(req("/api/og/" + b64(bad)))).status, 400, bad);
 });
 
 test("isEnglish keeps English and drops other languages", () => {

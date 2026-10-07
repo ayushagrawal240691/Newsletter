@@ -42,6 +42,16 @@ Local preview: `npm run dev` (http://localhost:8787). Tests: `npm test`.
 | English only | Both feeds are requested in their English edition, and the Worker also drops any story whose title is in another language. |
 | Refresh every hour | The page reloads feeds every 60 min (and when a sleeping tab wakes); the Worker's upstream fetch is edge-cached for 60 min, so everyone sees the same hourly snapshot. |
 
+## Country: ~75% local, ~25% world
+Each persona has a country (chosen on the welcome page, or later via **Edit**; existing users see a banner asking for it).
+- **Local:** Google News and Bing News English editions for that country (e.g. India, UK, Australia, Canada…),
+  GDELT restricted to outlets in that country, and that country's own publishers (`src/feeds.js`).
+  Countries with no English edition use the US edition with the country name added to the search.
+- **World:** the most widely covered stories (GDELT ranked by source popularity) and the big international publishers' lead stories.
+- **Mix:** the page interleaves them 3 local : 1 world (so a page of 36 tiles is 27 + 9). If one side runs short the other fills in.
+  World stories carry a 🌍 badge. "International (no preference)" turns the mix off.
+- The country is also detected from the visitor's connection (Cloudflare) and preselected.
+
 ## News sources & pictures
 - **Per interest:** Bing News, Google News and GDELT (a free global news index with article photos), merged and de-duplicated.
 - **Popular publishers:** BBC, The Guardian, NYT, CNBC, Al Jazeera, TechCrunch, Times of India, Economic Times,
@@ -50,7 +60,7 @@ Local preview: `npm run dev` (http://localhost:8787). Tests: `npm test`.
 - **Pictures:** taken from the feeds themselves; for stories without one the Worker reads the article's own social-share
   image (`og:image`). Stories that still have no real photo are listed under *More headlines* instead of getting a placeholder tile.
 - A feed that is down is skipped; the Worker never fails because one source did.
-- Cloudflare's free plan limits CPU time per request, so publisher feeds are fetched 2 at a time (`/api/pool/0…6`).
+- Cloudflare's free plan limits CPU time per request, so publisher feeds are fetched 2 at a time (`/api/pool/<key>`).
 
 ## Capacity & limits (free tier)
 - Each page load = 1 Worker request per interest (max 10), plus 7 publisher batches and a few photo lookups, so ≈ 15–25 requests. 100k/day ≈ 4–6k page loads/day.

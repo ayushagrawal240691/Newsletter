@@ -38,6 +38,7 @@ h3.sec{margin:28px 0 8px;font-size:15px}
 .rows a:hover{color:var(--accent)}.rows small{color:var(--mute);white-space:nowrap}
 .empty{color:var(--mute);text-align:center;padding:40px 0}
 .banner{background:var(--card);border:1px solid var(--accent);border-radius:12px;padding:12px 16px;margin-bottom:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.banner.country{border-color:#f59e0b}
 .warn{color:#b45309;font-size:13px;margin-bottom:8px}
 dialog{border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);max-width:460px;width:92%}
 dialog label{display:block;margin:10px 0 4px;font-size:13px;color:var(--mute)}dialog input,dialog textarea{width:100%}textarea{min-height:100px}
@@ -63,6 +64,8 @@ dialog label{display:block;margin:10px 0 4px;font-size:13px;color:var(--mute)}di
 .grad{background:linear-gradient(90deg,#60a5fa,#c084fc,#f472b6);-webkit-background-clip:text;background-clip:text;color:transparent}
 .by{margin:10px 0 0;font-size:18px}.by b{font-weight:900;color:#fde68a}
 .lead{color:#cbd5e1;margin:14px 0 18px}
+#welcome select{width:100%;margin-bottom:10px;background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.25);color:#fff;padding:8px 10px}
+#welcome select option{color:#111}
 #welcome input,#welcome textarea{width:100%;background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.25);color:#fff;margin-bottom:10px}
 #welcome ::placeholder{color:#94a3b8}
 #welcome label{display:block;font-size:12.5px;color:#cbd5e1;margin:2px 0 5px}
@@ -104,6 +107,8 @@ dialog label{display:block;margin:10px 0 4px;font-size:13px;color:var(--mute)}di
     <form id="wform">
       <label for="wname">What should we call you?</label>
       <input id="wname" required maxlength="40" placeholder="Your name or persona, e.g. Priya · Product Manager" autocomplete="name">
+      <label for="wcountry">Your country — about 75% of your news will come from here</label>
+      <select id="wcountry" required></select>
       <label for="wint">Your interests (type them, or tap below)</label>
       <textarea id="wint" required rows="3" placeholder="AI agents, Fintech India, Formula 1"></textarea>
       <div class="sug" id="sug"></div>
@@ -116,6 +121,7 @@ dialog label{display:block;margin:10px 0 4px;font-size:13px;color:var(--mute)}di
 <dialog id="dlg"><form method="dialog" id="form">
   <h3 id="dtitle">Create your persona</h3>
   <label>Persona name</label><input id="pname" required maxlength="40" placeholder="e.g. Product Manager">
+  <label>Country <span style="opacity:.7">(≈75% local news, ≈25% world's biggest stories)</span></label><select id="pcountry" style="width:100%"></select>
   <label>Interest areas (one per line, or separated by commas)</label>
   <textarea id="pint" required placeholder="AI agents&#10;Fintech India&#10;Formula 1"></textarea>
   <p><button class="primary" value="ok">Save</button> <button value="cancel" formnovalidate>Cancel</button>
@@ -123,7 +129,7 @@ dialog label{display:block;margin:10px 0 4px;font-size:13px;color:var(--mute)}di
 </form></dialog>
 
 <script>
-const REFRESH_MS = 60*60*1000, MAX_INTERESTS = 10, POOLS = 7, TOP = "Top headlines";
+const REFRESH_MS = 60*60*1000, MAX_INTERESTS = 10, TOP = "Top headlines";
 const $ = id => document.getElementById(id);
 const el = (t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
 const safeUrl = u => /^https?:\/\//i.test(u) ? u : "#";
@@ -138,10 +144,29 @@ try { state = Object.assign(state, JSON.parse(localStorage.getItem(KEY) || "{}")
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {} };
 const current = () => state.personas.find(p => p.id === state.active) || state.personas[0];
 const parseInterests = t => [...new Set(t.split(/[\n,]/).map(s=>s.trim()).filter(Boolean))].slice(0, MAX_INTERESTS);
-state.personas.forEach(p => p.interests = parseInterests(p.interests.join("\n")));   // migrate "a, b" saved as one interest
-function createPersona(name, interests) {
-  const np = {id: crypto.randomUUID(), name, interests}; state.personas.push(np); state.active = np.id; save();
+state.personas.forEach(p => { p.interests = parseInterests(p.interests.join("\n")); p.country = p.country || ""; });   // migrate older saves
+function createPersona(name, interests, country) {
+  const np = {id: crypto.randomUUID(), name, interests, country: country || ""}; state.personas.push(np); state.active = np.id; save();
 }
+
+// ---- countries ("WW" = no preference). Only a real code gets the 75/25 local/world mix. ----
+const LOCAL_SHARE = 4;                                            // every 4th tile is international => 75% local / 25% world
+let COUNTRIES = [["IN","India"],["US","United States"],["GB","United Kingdom"],["AU","Australia"],["CA","Canada"],["SG","Singapore"],["ZA","South Africa"],["NG","Nigeria"],["PK","Pakistan"],["AE","United Arab Emirates"]];
+let geoCountry = "";
+const flag = c => /^[A-Z]{2}$/.test(c) ? String.fromCodePoint(...[...c].map(x => 0x1F1A5 + x.charCodeAt(0))) : "🌍";
+const countryName = c => (COUNTRIES.find(x => x[0] === c) || [])[1] || (c === "WW" ? "International" : "");
+const mixOn = p => !!p && /^[A-Z]{2}$/.test(p.country) && p.country !== "WW";
+function fillCountrySelect(sel, value) {
+  const o = (v, t, extra) => { const e = el("option", null, t); e.value = v; if (extra) e.disabled = true; return e; };
+  sel.replaceChildren(o("", "Select your country…", true), o("WW", "🌍 International (no local preference)"),
+    ...COUNTRIES.map(([c, n]) => o(c, flag(c) + " " + n)));
+  sel.value = value || geoCountry || "";
+  if (!sel.value) sel.value = "";
+}
+const countriesReady = Promise.allSettled([
+  fetch("/api/countries").then(r => r.json()).then(l => { COUNTRIES = l.map(c => [c.code, c.name]); }),
+  fetch("/api/geo", {cache: "no-store"}).then(r => r.json()).then(g => { geoCountry = (g.country || "").toUpperCase(); }),
+]);
 
 // ---- matching publisher stories to interests (done in the browser; publishers aren't searchable) ----
 const STOP = new Set("the a an of and or in on for to news latest top trends trend across global globe world update updates about".split(" "));
@@ -167,19 +192,22 @@ async function load(markFresh) {
   const p = current(); if (!p) return;
   const myLoad = ++loadId;
   $("status").textContent = "updating…";
+  const mix = mixOn(p), cc = mix ? p.country : "";
+  const keysP = getJson("/api/pools/" + (cc || "xx")).then(r => r.keys).catch(() => ["g-0","g-1","g-2","g-3","g-4"]);
   const [byInterest, pools] = await Promise.all([
-    Promise.allSettled(p.interests.map(i => getJson("/api/news/" + encodeURIComponent(i)))),
-    Promise.allSettled(Array.from({length: POOLS}, (_, n) => getJson("/api/pool/" + n)))]);
+    Promise.allSettled(p.interests.map(i => getJson("/api/news/" + (cc ? cc + "/" : "") + encodeURIComponent(i)))),
+    keysP.then(keys => Promise.allSettled(keys.map(k => getJson("/api/pool/" + k))))]);
   if (myLoad !== loadId) return;                                  // persona switched meanwhile
   const all = [], failed = [];
   byInterest.forEach((r, k) => r.status === "fulfilled"
-    ? r.value.items.forEach(a => all.push({...a, interest: p.interests[k]}))
+    ? r.value.items.forEach(a => all.push({...a, interest: p.interests[k], scope: mix ? (a.scope || "local") : "local"}))
     : failed.push(p.interests[k] + " (" + (r.reason?.message || "network error") + ")"));
   const matchers = p.interests.map(i => [i, matcher(i)]);
   pools.forEach(r => r.status === "fulfilled" && r.value.items.forEach(a => {
     const hit = matchers.find(([, m]) => m(a));
-    if (hit) all.push({...a, interest: hit[0]});
-    else if (a.rank < 2) all.push({...a, interest: TOP});         // each publisher's lead stories
+    const scope = mix && a.home !== cc ? "intl" : "local";         // publisher's home country decides
+    if (hit) all.push({...a, interest: hit[0], scope});
+    else if (a.rank < 2) all.push({...a, interest: TOP, scope});   // each publisher's lead stories
   }));
   // de-dupe by URL and by headline, preferring the copy that has a photo
   const byKey = new Map();
@@ -204,7 +232,7 @@ async function enrich() {
   let i = 0;
   const run = async () => { while (i < todo.length) {
     const a = todo[i++];
-    try { const j = await (await fetch("/api/og?url=" + encodeURIComponent(a.url))).json(); ogCache.set(a.url, j.image || ""); if (j.image) { a.image = j.image; scheduleRender(); } }
+    try { const j = await (await fetch("/api/og/" + btoa(unescape(encodeURIComponent(a.url))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,""))).json(); ogCache.set(a.url, j.image || ""); if (j.image) { a.image = j.image; scheduleRender(); } }
     catch { ogCache.set(a.url, ""); }
   } };
   await Promise.all([run(), run(), run(), run()]);
@@ -219,27 +247,42 @@ function tick() {
 function tile(a, hero) {
   const t = document.createElement("a");
   t.className = "tile" + (hero ? " hero" : "") + (a.fresh ? " fresh" : "");
+  t.dataset.scope = a.scope || "local";
   t.href = safeUrl(a.url); t.target = "_blank"; t.rel = "noopener noreferrer";
   const m = el("div", "media");
   const img = document.createElement("img");
   img.src = a.image; img.alt = a.title; img.loading = "lazy"; img.decoding = "async"; img.referrerPolicy = "no-referrer";
   img.onerror = () => { a.image = ""; ogCache.set(a.url, ""); scheduleRender(); };   // broken photo -> story moves to the text list
-  m.append(img, el("span", "badge", a.interest === TOP ? "🔥 " + TOP : a.interest));
+  m.append(img, el("span", "badge", (a.scope === "intl" ? "🌍 " : "") + (a.interest === TOP ? "🔥 " + TOP : a.interest)));
   if (a.fresh) m.append(el("span", "new", "NEW"));
   const body = el("div", "body"); body.append(el("h2", null, a.title));
   const meta = el("div", "meta"); meta.append(el("span", null, a.source || "News"), el("span", null, ago(a.ts))); body.append(meta);
   t.append(m, body); return t;
 }
 
+// 3 local : 1 international, interleaved so the world's big stories are spread through the page, not lumped at the end.
+// If one side runs short the other fills in. Local = newest first; international = most prominent first.
+function interleave(list) {
+  if (!mixOn(current())) return list;
+  const L = list.filter(a => a.scope !== "intl");
+  const I = list.filter(a => a.scope === "intl").sort((a, b) => (a.rank ?? 99) - (b.rank ?? 99) || b.ts - a.ts);
+  const out = []; let li = 0, ii = 0;
+  while (li < L.length || ii < I.length) {
+    if ((out.length + 1) % LOCAL_SHARE === 0 && ii < I.length) out.push(I[ii++]);
+    else if (li < L.length) out.push(L[li++]); else out.push(I[ii++]);
+  }
+  return out;
+}
 function render() {
   const p = current();
-  $("sub").textContent = p ? `Top stories for ${p.name} · ${new Date().toLocaleDateString([], {weekday:"long", day:"numeric", month:"long"})}` : "";
+  const where = mixOn(p) ? ` · ${flag(p.country)} ${countryName(p.country)} + world` : "";
+  $("sub").textContent = p ? `Top stories for ${p.name}${where} · ${new Date().toLocaleDateString([], {weekday:"long", day:"numeric", month:"long"})}` : "";
   const hasTop = items.some(a => a.interest === TOP);
   $("chips").replaceChildren(...["All", ...(hasTop ? [TOP] : []), ...(p?.interests||[])].map(n => {
     const b = el("button","chip"+((n==="All"&&!interest)||n===interest?" act":""), n === TOP ? "🔥 " + TOP : n);
     b.onclick = () => { interest = n==="All" ? "" : n; shown = 18; render(); }; return b; }));
   const list = items.filter(a => !interest || a.interest === interest);
-  const pics = list.filter(a => a.image), text = list.filter(a => !a.image);
+  const pics = interleave(list.filter(a => a.image)), text = interleave(list.filter(a => !a.image));
   if (!list.length) { $("feed").replaceChildren(el("div","empty", lastLoad ? "No recent stories for this interest." : "Loading headlines…")); return; }
   const nodes = [];
   if (pics.length) {
@@ -254,7 +297,19 @@ function render() {
   }
   $("feed").replaceChildren(...nodes);
 }
+function countryBanner() {
+  const p = current();
+  $("banner").querySelector(".country")?.remove();
+  if (!p || p.country || state.skipCountry) return;
+  const b = el("div", "banner country");
+  b.append(el("span", null, "📍 Add your country to get mostly local news (about 75% from your country, 25% the world's biggest stories)."));
+  const go = el("button", "primary", "Choose country"), no = el("button", null, "Not now");
+  go.onclick = () => openDialog(p);
+  no.onclick = () => { state.skipCountry = true; save(); b.remove(); };
+  b.append(go, no); $("banner").prepend(b);
+}
 function renderPersonas() {
+  countryBanner();
   $("persona").replaceChildren(...state.personas.map(p => { const o = el("option",null,p.name); o.value=p.id; o.selected=p.id===current()?.id; return o; }));
   for (const id of ["edit","share","persona","refresh"]) $(id).hidden = !state.personas.length;
 }
@@ -265,13 +320,17 @@ $("sug").replaceChildren(...SUGGEST.map(s => { const b = el("button", null, s); 
   b.onclick = () => { const cur = parseInterests($("wint").value), has = cur.some(x => x.toLowerCase() === s.toLowerCase());
     $("wint").value = (has ? cur.filter(x => x.toLowerCase() !== s.toLowerCase()) : [...cur, s]).join(", ");
     b.classList.toggle("on", !has); }; return b; }));
-function showWelcome() { $("welcome").classList.remove("out"); $("welcome").hidden = false; setTimeout(() => $("wname").focus(), 300); }
+function showWelcome() {
+  $("welcome").classList.remove("out"); $("welcome").hidden = false; setTimeout(() => $("wname").focus(), 300);
+  fillCountrySelect($("wcountry"), $("wcountry").value);
+  countriesReady.then(() => fillCountrySelect($("wcountry"), $("wcountry").value));   // list + detected country arrive a moment later
+}
 function hideWelcome() { const w = $("welcome"); w.classList.add("out"); setTimeout(() => { w.hidden = true; }, 500); }
 $("wform").onsubmit = e => {
   e.preventDefault();
-  const interests = parseInterests($("wint").value), name = $("wname").value.trim();
-  if (!name || !interests.length) return;
-  createPersona(name, interests); hideWelcome(); switchPersona();
+  const interests = parseInterests($("wint").value), name = $("wname").value.trim(), country = $("wcountry").value;
+  if (!name || !interests.length || !country) return;
+  createPersona(name, interests, country); hideWelcome(); switchPersona();
 };
 
 // ---- persona dialog (+ New / Edit) ----
@@ -279,16 +338,18 @@ function openDialog(p) {
   editingId = p?.id || null;
   $("dtitle").textContent = p ? "Edit persona" : "New persona";
   $("pname").value = p?.name || ""; $("pint").value = p?.interests.join("\n") || "";
-  $("ddel").hidden = !p; $("dlg").showModal();
+  $("ddel").hidden = !p; fillCountrySelect($("pcountry"), p ? p.country : "");
+  $("dlg").showModal();
+  countriesReady.then(() => fillCountrySelect($("pcountry"), $("pcountry").value || (p ? p.country : "")));
 }
 $("form").onsubmit = e => {
   const act = e.submitter?.value;
   if (act === "delete") { state.personas = state.personas.filter(p => p.id !== editingId); state.active = state.personas[0]?.id || null; save(); }
   else if (act === "ok") {
-    const interests = parseInterests($("pint").value), name = $("pname").value.trim();
+    const interests = parseInterests($("pint").value), name = $("pname").value.trim(), country = $("pcountry").value;
     if (!interests.length || !name) return;
     const p = state.personas.find(x => x.id === editingId);
-    if (p) { p.name = name; p.interests = interests; save(); } else createPersona(name, interests);
+    if (p) { p.name = name; p.interests = interests; p.country = country; save(); } else createPersona(name, interests, country);
   } else return;
   switchPersona();
 };
@@ -303,7 +364,7 @@ $("new").onclick = () => openDialog();
 $("edit").onclick = () => openDialog(current());
 $("refresh").onclick = () => load(true);
 $("share").onclick = async () => {
-  const p = current(), payload = btoa(unescape(encodeURIComponent(JSON.stringify({n:p.name,i:p.interests}))));
+  const p = current(), payload = btoa(unescape(encodeURIComponent(JSON.stringify({n:p.name,i:p.interests,c:p.country}))));
   const url = location.origin + location.pathname + "#p=" + payload;
   try { await navigator.clipboard.writeText(url); alert("Link copied. Anyone who opens it can save this persona."); }
   catch { prompt("Copy this link:", url); }
@@ -316,10 +377,11 @@ function checkSharedLink() {
     const d = JSON.parse(decodeURIComponent(escape(atob(m[1]))));
     const interests = (Array.isArray(d.i) ? d.i : []).map(String).slice(0, MAX_INTERESTS), name = String(d.n||"Shared persona").slice(0,40);
     if (!interests.length) return false;
+    const country = /^[A-Za-z]{2}$/.test(d.c || "") ? String(d.c).toUpperCase() : "";
     const b = el("div","banner"); b.append(el("span",null,`Save the shared persona “${name}” (${interests.join(", ")})?`));
     const yes = el("button","primary","Save"), no = el("button",null,"Dismiss");
     const done = () => { b.remove(); history.replaceState(null,"",location.pathname); };
-    yes.onclick = () => { createPersona(name, interests); done(); switchPersona(); };
+    yes.onclick = () => { createPersona(name, interests, country); done(); switchPersona(); };
     no.onclick = () => { done(); if (!current()) showWelcome(); };
     b.append(yes, no); $("banner").append(b); return true;
   } catch { return false; }
