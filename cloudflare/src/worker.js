@@ -69,8 +69,12 @@ async function fetchItems(q) {
 }
 
 export async function handleNews(request) {
-  const q = (new URL(request.url).searchParams.get("q") || "").trim().toLowerCase().replace(/\s+/g, " ");
-  if (!q || q.length > MAX_QUERY_LEN) return json({ error: "q required (max 100 chars)" }, 400);
+  // Accept /api/news/<term> (preferred) or /api/news?q=<term>.
+  const url = new URL(request.url);
+  const raw = decodeURIComponent(url.pathname.replace(/^\/api\/news\/?/, "")) || url.searchParams.get("q") || "";
+  const q = raw.trim().toLowerCase().replace(/\s+/g, " ");
+  if (!q || q.length > MAX_QUERY_LEN)
+    return json({ error: "search term required (max 100 chars)", received: { path: url.pathname, search: url.search } }, 400);
 
   const { items, errors } = await fetchItems(q);   // normalised q => shared edge-cache entries
   if (!items.length && errors.length) return json({ error: errors.join(", ") }, 502);
@@ -80,7 +84,7 @@ export async function handleNews(request) {
 export default {
   async fetch(request, env) {
     const { pathname } = new URL(request.url);
-    if (pathname === "/api/news" && request.method === "GET") return handleNews(request);
+    if ((pathname === "/api/news" || pathname.startsWith("/api/news/")) && request.method === "GET") return handleNews(request);
     return env.ASSETS.fetch(request);
   },
 };

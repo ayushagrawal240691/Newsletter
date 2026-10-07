@@ -77,7 +77,7 @@ async function load(markFresh) {
   const p = current(); if (!p) return;
   $("status").textContent = "updating…";
   const results = await Promise.allSettled(p.interests.map(i =>
-    fetch("/api/news?q=" + encodeURIComponent(i)).then(async r => {
+    fetch("/api/news/" + encodeURIComponent(i)).then(async r => {
       if (r.ok) return r.json();
       let why = "HTTP " + r.status;
       try { why = (await r.json()).error || why; } catch {}

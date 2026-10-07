@@ -55,3 +55,9 @@ test("reports which sources failed when all fail", async () => {
   assert.equal(r.status, 502);
   assert.match((await r.json()).error, /google 503, bing 503/);
 });
+
+test("accepts the term in the URL path", async () => {
+  globalThis.fetch = async () => new Response(RSS);
+  const r = await handleNews(new Request("https://app.test/api/news/Trends%20in%20Data%20%26%20AI"));
+  assert.equal((await r.json()).query, "trends in data & ai");
+});
