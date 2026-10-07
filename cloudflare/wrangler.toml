@@ -1,0 +1,9 @@
+name = "live-news-dashboard"
+main = "src/worker.js"
+compatibility_date = "2025-01-01"
+
+# Static frontend is served from ./public; /api/* is handled by the Worker.
+[assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = ["/api/*"]

@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My Live News</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#14171a;--mute:#667085;--line:#e4e7ec;--accent:#2563eb;--new:#16a34a}
+@media(prefers-color-scheme:dark){:root{--bg:#0e1116;--card:#171b22;--ink:#e6e8eb;--mute:#8b94a3;--line:#262c36;--accent:#60a5fa;--new:#4ade80}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,sans-serif}
+header{position:sticky;top:0;z-index:2;background:var(--card);border-bottom:1px solid var(--line);padding:12px 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+h1{font-size:17px;margin:0}
+select,button,input,textarea{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+button{cursor:pointer}button:hover{border-color:var(--accent)}button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.status{margin-left:auto;color:var(--mute);font-size:13px}
+main{max-width:860px;margin:0 auto;padding:16px}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.chip{border-radius:99px;padding:4px 12px;font-size:13px}.chip.act{background:var(--accent);border-color:var(--accent);color:#fff}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin-bottom:10px}
+.card.fresh{border-left:4px solid var(--new)}
+.card a{color:var(--ink);text-decoration:none;font-weight:600;font-size:16px}.card a:hover{color:var(--accent)}
+.meta{color:var(--mute);font-size:12.5px;margin-top:4px;display:flex;gap:8px;flex-wrap:wrap}.tag{color:var(--accent)}
+.empty{color:var(--mute);text-align:center;padding:40px 0}
+.banner{background:var(--card);border:1px solid var(--accent);border-radius:12px;padding:12px 16px;margin-bottom:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.warn{color:#b45309;font-size:13px;margin-bottom:8px}
+dialog{border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);max-width:460px;width:92%}
+dialog label{display:block;margin:10px 0 4px;font-size:13px;color:var(--mute)}dialog input,dialog textarea{width:100%}textarea{min-height:100px}
+</style>
+</head>
+<body>
+<header>
+  <h1>📰 My Live News</h1>
+  <select id="persona" aria-label="Persona"></select>
+  <button id="new">+ New</button>
+  <button id="edit">Edit</button>
+  <button id="share" title="Copy a link that carries this persona to another device">Share</button>
+  <button id="refresh">↻</button>
+  <span class="status" id="status"></span>
+</header>
+<main>
+  <div id="banner"></div>
+  <div class="chips" id="chips"></div>
+  <div id="warn"></div>
+  <div id="feed"></div>
+</main>
+
+<dialog id="dlg"><form method="dialog" id="form">
+  <h3 id="dtitle">Create your persona</h3>
+  <p style="color:var(--mute);margin:0">Tell us what you want to follow. It's saved in this browser — you won't need to enter it again.</p>
+  <label>Persona name</label><input id="pname" required maxlength="40" placeholder="e.g. Product Manager">
+  <label>Interest areas (one per line)</label>
+  <textarea id="pint" required placeholder="AI agents&#10;Fintech India&#10;Formula 1"></textarea>
+  <p><button class="primary" value="ok">Save</button> <button value="cancel" formnovalidate>Cancel</button>
+  <button value="delete" id="ddel" formnovalidate style="float:right">Delete</button></p>
+</form></dialog>
+
+<script>
+const REFRESH_MS = 60*60*1000, MAX_INTERESTS = 10;
+const $ = id => document.getElementById(id);
+const el = (t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
+const safeUrl = u => /^https?:\/\//i.test(u) ? u : "#";
+const ago = ts => {const s=Math.max(0,Date.now()/1000-ts);
+  return s<60?"just now":s<3600?Math.floor(s/60)+"m ago":s<86400?Math.floor(s/3600)+"h ago":Math.floor(s/86400)+"d ago"};
+
+// ---- persistence (localStorage, wrapped: it can throw in private windows) ----
+const KEY = "livenews.v1";
+let state = {personas:[], active:null};
+try { state = Object.assign(state, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch {}
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {} };
+const current = () => state.personas.find(p => p.id === state.active) || state.personas[0];
+const parseInterests = t => [...new Set(t.split("\n").map(s=>s.trim()).filter(Boolean))].slice(0, MAX_INTERESTS);
+
+// ---- news ----
+let items = [], seen = new Set(), interest = "", lastLoad = 0, editingId = null;
+
+async function load(markFresh) {
+  const p = current(); if (!p) return;
+  $("status").textContent = "updating…";
+  const results = await Promise.allSettled(p.interests.map(i =>
+    fetch("/api/news?q=" + encodeURIComponent(i)).then(r => r.ok ? r.json() : Promise.reject(r.status))));
+  const next = [], failed = [];
+  results.forEach((r, k) => r.status === "fulfilled"
+    ? r.value.items.forEach(a => next.push({...a, interest: p.interests[k]})) : failed.push(p.interests[k]));
+  // de-dupe the same story arriving through two interests
+  const byUrl = new Map(); next.forEach(a => byUrl.has(a.url) || byUrl.set(a.url, a));
+  const merged = [...byUrl.values()].sort((a,b)=>b.ts-a.ts);
+  const freshIds = new Set(markFresh ? merged.filter(a=>!seen.has(a.url)).map(a=>a.url) : []);
+  merged.forEach(a => { a.fresh = freshIds.has(a.url); seen.add(a.url); });
+  items = merged; lastLoad = Date.now();
+  $("warn").replaceChildren(...(failed.length ? [el("div","warn","⚠ Couldn't load: " + failed.join(", "))] : []));
+  render(); tick();
+}
+function tick() {
+  if (!lastLoad) return;
+  const next = new Date(lastLoad + REFRESH_MS);
+  $("status").textContent = "Updated " + new Date(lastLoad).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})
+    + " · next " + next.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
+}
+function render() {
+  const p = current();
+  $("chips").replaceChildren(...["All", ...(p?.interests||[])].map(n => {
+    const b = el("button","chip"+((n==="All"&&!interest)||n===interest?" act":""),n);
+    b.onclick = () => { interest = n==="All" ? "" : n; render(); }; return b; }));
+  const list = items.filter(a => !interest || a.interest === interest);
+  $("feed").replaceChildren(...(list.length ? list.map(a => {
+    const c = el("div","card"+(a.fresh?" fresh":""));
+    const l = el("a",null,a.title); l.href = safeUrl(a.url); l.target="_blank"; l.rel="noopener noreferrer"; c.append(l);
+    const m = el("div","meta"); m.append(el("span","tag",a.interest), el("span",null,a.source), el("span",null,ago(a.ts))); c.append(m);
+    return c; }) : [el("div","empty", lastLoad ? "No recent stories for this interest." : "Loading headlines…")]));
+}
+function renderPersonas() {
+  $("persona").replaceChildren(...state.personas.map(p => { const o = el("option",null,p.name); o.value=p.id; o.selected=p.id===current()?.id; return o; }));
+  for (const id of ["edit","share","persona","refresh"]) $(id).hidden = !state.personas.length;
+}
+
+// ---- persona dialog ----
+function openDialog(p) {
+  editingId = p?.id || null;
+  $("dtitle").textContent = p ? "Edit persona" : "Create your persona";
+  $("pname").value = p?.name || ""; $("pint").value = p?.interests.join("\n") || "";
+  $("ddel").hidden = !p; $("dlg").showModal();
+}
+$("form").onsubmit = e => {
+  const act = e.submitter?.value;
+  if (act === "delete") { state.personas = state.personas.filter(p => p.id !== editingId); state.active = state.personas[0]?.id || null; }
+  else if (act === "ok") {
+    const interests = parseInterests($("pint").value), name = $("pname").value.trim();
+    if (!interests.length || !name) return;
+    const p = state.personas.find(x => x.id === editingId);
+    if (p) { p.name = name; p.interests = interests; }
+    else { const np = {id: crypto.randomUUID(), name, interests}; state.personas.push(np); state.active = np.id; }
+  } else return;
+  save(); switchPersona();
+};
+function switchPersona() { interest=""; items=[]; seen=new Set(); lastLoad=0; renderPersonas(); render(); if (current()) load(false); else openDialog(); }
+
+$("persona").onchange = e => { state.active = e.target.value; save(); switchPersona(); };
+$("new").onclick = () => openDialog();
+$("edit").onclick = () => openDialog(current());
+$("refresh").onclick = () => load(true);
+$("share").onclick = async () => {
+  const p = current(), payload = btoa(unescape(encodeURIComponent(JSON.stringify({n:p.name,i:p.interests}))));
+  const url = location.origin + location.pathname + "#p=" + payload;
+  try { await navigator.clipboard.writeText(url); alert("Link copied. Anyone who opens it can save this persona."); }
+  catch { prompt("Copy this link:", url); }
+};
+
+// ---- shared-persona link: #p=<base64 json> ----
+function checkSharedLink() {
+  const m = location.hash.match(/^#p=(.+)$/); if (!m) return;
+  try {
+    const d = JSON.parse(decodeURIComponent(escape(atob(m[1]))));
+    const interests = (Array.isArray(d.i) ? d.i : []).map(String).slice(0, MAX_INTERESTS), name = String(d.n||"Shared persona").slice(0,40);
+    if (!interests.length) return;
+    const b = el("div","banner"); b.append(el("span",null,`Save the shared persona “${name}” (${interests.join(", ")})?`));
+    const yes = el("button","primary","Save"), no = el("button",null,"Dismiss");
+    yes.onclick = () => { const np={id:crypto.randomUUID(),name,interests}; state.personas.push(np); state.active=np.id; save(); b.remove(); history.replaceState(null,"",location.pathname); switchPersona(); };
+    no.onclick = () => { b.remove(); history.replaceState(null,"",location.pathname); };
+    b.append(yes, no); $("banner").append(b);
+  } catch {}
+}
+
+// ---- hourly auto-refresh (also catches up when a sleeping tab/phone wakes) ----
+setInterval(() => { if (Date.now() - lastLoad >= REFRESH_MS) load(true); else render(); tick(); }, 60*1000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden && Date.now() - lastLoad >= REFRESH_MS) load(true); });
+
+renderPersonas(); render(); checkSharedLink();
+if (current()) load(false); else if (!location.hash.startsWith("#p=")) openDialog();
+</script>
+</body>
+</html>

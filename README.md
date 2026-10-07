@@ -1,5 +1,7 @@
 # Live News Dashboard
 
+> **Want it online for free, always on, shareable?** Use the Cloudflare version in [`cloudflare/`](cloudflare/README.md). The Python server below is for local use.
+
 A persona-driven news dashboard. Each persona has interest areas; a background poller
 continuously pulls fresh headlines from the web (Google News RSS search per interest, plus any
 RSS/Atom feeds you list) and pushes new items to the browser live over Server-Sent Events.
