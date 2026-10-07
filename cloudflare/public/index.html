@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>My Live News</title>
+<title>Your News</title>
 <style>
-:root{--bg:#f6f7f9;--card:#fff;--ink:#14171a;--mute:#667085;--line:#e4e7ec;--accent:#2563eb;--new:#16a34a}
-@media(prefers-color-scheme:dark){:root{--bg:#0e1116;--card:#171b22;--ink:#e6e8eb;--mute:#8b94a3;--line:#262c36;--accent:#60a5fa;--new:#4ade80}}
+:root{--bg:#f6f7f9;--card:#fff;--ink:#14171a;--mute:#667085;--line:#e4e7ec;--accent:#2563eb;--new:#16a34a;--ph:#e5e7eb}
+@media(prefers-color-scheme:dark){:root{--bg:#0e1116;--card:#171b22;--ink:#e6e8eb;--mute:#8b94a3;--line:#262c36;--accent:#60a5fa;--new:#4ade80;--ph:#222833}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,sans-serif}
 header{position:sticky;top:0;z-index:2;background:var(--card);border-bottom:1px solid var(--line);padding:12px 16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-h1{font-size:17px;margin:0}
+h1.brand{font-size:17px;margin:0}
 select,button,input,textarea{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:6px 10px}
 button{cursor:pointer}button:hover{border-color:var(--accent)}button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 .status{margin-left:auto;color:var(--mute);font-size:13px}
@@ -18,35 +18,70 @@ main{max-width:1100px;margin:0 auto;padding:16px}
 .chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;margin-bottom:14px;scrollbar-width:thin}
 .chip{border-radius:99px;padding:5px 14px;font-size:13px;white-space:nowrap;flex:none}.chip.act{background:var(--accent);border-color:var(--accent);color:#fff}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:16px}
-@media(min-width:720px){.tile.hero{grid-column:span 2}.tile.hero .media{aspect-ratio:21/9}.tile.hero h2{font-size:22px;-webkit-line-clamp:3}}
+@media(min-width:720px){.tile.hero{grid-column:span 2}.tile.hero .media{aspect-ratio:21/9}.tile.hero h2{font-size:22px}}
 .tile{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;display:flex;flex-direction:column;text-decoration:none;color:var(--ink);transition:transform .15s,box-shadow .15s}
-.tile:hover{transform:translateY(-3px);box-shadow:0 10px 24px rgba(0,0,0,.14)}
+.tile:hover{transform:translateY(-3px);box-shadow:0 10px 24px rgba(0,0,0,.18)}
 .tile.fresh{outline:2px solid var(--new)}
-.media{position:relative;aspect-ratio:16/9;background:var(--g);overflow:hidden}
-.media img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
-.media .ini{position:absolute;inset:0;display:grid;place-items:center;font-size:64px;font-weight:800;color:rgba(255,255,255,.35)}
-.badge{position:absolute;left:10px;top:10px;background:rgba(0,0,0,.6);color:#fff;font-size:11.5px;padding:3px 9px;border-radius:99px;max-width:80%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;backdrop-filter:blur(4px)}
-.new{position:absolute;right:10px;top:10px;background:var(--new);color:#06220f;font-size:11px;font-weight:700;padding:3px 8px;border-radius:99px}
+.media{position:relative;aspect-ratio:16/9;background:var(--ph);overflow:hidden}
+.media img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:transform .5s}
+.tile:hover .media img{transform:scale(1.05)}
+.media::after{content:"";position:absolute;inset:auto 0 0 0;height:45%;background:linear-gradient(transparent,rgba(0,0,0,.45));pointer-events:none}
+.badge{position:absolute;z-index:1;left:10px;top:10px;background:rgba(0,0,0,.6);color:#fff;font-size:11.5px;padding:3px 9px;border-radius:99px;max-width:80%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;backdrop-filter:blur(4px)}
+.new{position:absolute;z-index:1;right:10px;top:10px;background:var(--new);color:#06220f;font-size:11px;font-weight:700;padding:3px 8px;border-radius:99px}
 .body{padding:12px 14px 14px;display:flex;flex-direction:column;gap:8px;flex:1}
 .tile h2{margin:0;font-size:16px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 .meta{color:var(--mute);font-size:12.5px;margin-top:auto;display:flex;justify-content:space-between;gap:8px}
 .meta span:first-child{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .more{display:block;margin:20px auto}
+h3.sec{margin:28px 0 8px;font-size:15px}
+.rows a{display:flex;gap:10px;justify-content:space-between;padding:9px 2px;border-bottom:1px solid var(--line);color:var(--ink);text-decoration:none}
+.rows a:hover{color:var(--accent)}.rows small{color:var(--mute);white-space:nowrap}
 .empty{color:var(--mute);text-align:center;padding:40px 0}
 .banner{background:var(--card);border:1px solid var(--accent);border-radius:12px;padding:12px 16px;margin-bottom:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .warn{color:#b45309;font-size:13px;margin-bottom:8px}
 dialog{border:1px solid var(--line);border-radius:12px;background:var(--card);color:var(--ink);max-width:460px;width:92%}
 dialog label{display:block;margin:10px 0 4px;font-size:13px;color:var(--mute)}dialog input,dialog textarea{width:100%}textarea{min-height:100px}
+
+/* ---------- welcome ---------- */
+#welcome{position:fixed;inset:0;z-index:50;display:grid;place-items:center;padding:20px;overflow:auto;color:#fff;
+  background:linear-gradient(120deg,#0b1020,#1b1147,#0f3a5f,#12304a,#2a1250);background-size:400% 400%;animation:shift 18s ease infinite;transition:opacity .5s}
+#welcome[hidden]{display:none}#welcome.out{opacity:0;pointer-events:none}
+@keyframes shift{50%{background-position:100% 50%}}
+.blob{position:absolute;border-radius:50%;filter:blur(70px);opacity:.55;animation:float 14s ease-in-out infinite}
+.b1{width:420px;height:420px;background:#7c3aed;left:-80px;top:-60px}
+.b2{width:380px;height:380px;background:#06b6d4;right:-60px;top:20%;animation-delay:-4s}
+.b3{width:460px;height:460px;background:#ec4899;left:30%;bottom:-160px;animation-delay:-8s}
+@keyframes float{50%{transform:translate(60px,-50px) scale(1.15)}}
+.ticker{position:absolute;left:0;right:0;white-space:nowrap;font-weight:900;font-size:clamp(46px,9vw,110px);letter-spacing:.02em;color:transparent;-webkit-text-stroke:1.5px rgba(255,255,255,.13);pointer-events:none;user-select:none}
+.ticker span{display:inline-block;padding-right:.6em;animation:slide 40s linear infinite}
+.ticker.r2 span{animation-direction:reverse;animation-duration:55s}
+@keyframes slide{to{transform:translateX(-100%)}}
+.wcard{position:relative;z-index:1;width:min(560px,100%);background:rgba(10,14,30,.55);border:1px solid rgba(255,255,255,.18);border-radius:22px;padding:34px 30px;backdrop-filter:blur(14px);box-shadow:0 30px 80px rgba(0,0,0,.45);animation:rise .8s ease both}
+@keyframes rise{from{opacity:0;transform:translateY(24px)}}
+.kicker{margin:0 0 6px;font-size:12px;letter-spacing:.3em;font-weight:700;color:#a5b4fc}
+#welcome h1{margin:0;font-size:clamp(34px,7vw,58px);line-height:1.05;font-weight:900;letter-spacing:-.02em}
+.grad{background:linear-gradient(90deg,#60a5fa,#c084fc,#f472b6);-webkit-background-clip:text;background-clip:text;color:transparent}
+.by{margin:10px 0 0;font-size:18px}.by b{font-weight:900;color:#fde68a}
+.lead{color:#cbd5e1;margin:14px 0 18px}
+#welcome input,#welcome textarea{width:100%;background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.25);color:#fff;margin-bottom:10px}
+#welcome ::placeholder{color:#94a3b8}
+#welcome label{display:block;font-size:12.5px;color:#cbd5e1;margin:2px 0 5px}
+.sug{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px}
+.sug button{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.22);color:#fff;border-radius:99px;font-size:12.5px;padding:3px 11px}
+.sug button.on{background:#7c3aed;border-color:#7c3aed}
+#welcome .go{width:100%;padding:12px;font-weight:700;font-size:16px;background:linear-gradient(90deg,#6366f1,#ec4899);border:0;color:#fff;border-radius:12px}
+.fine{color:#94a3b8;font-size:12px;margin:12px 0 0;text-align:center}
+@media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head>
 <body>
 <header>
-  <h1>📰 My Live News</h1>
+  <h1 class="brand">📰 Your News</h1>
   <select id="persona" aria-label="Persona"></select>
   <button id="new">+ New</button>
   <button id="edit">Edit</button>
   <button id="share" title="Copy a link that carries this persona to another device">Share</button>
-  <button id="refresh">↻</button>
+  <button id="refresh" title="Refresh now">↻</button>
   <span class="status" id="status"></span>
 </header>
 <main>
@@ -57,9 +92,29 @@ dialog label{display:block;margin:10px 0 4px;font-size:13px;color:var(--mute)}di
   <div id="feed"></div>
 </main>
 
+<section id="welcome" hidden aria-label="Welcome">
+  <span class="blob b1"></span><span class="blob b2"></span><span class="blob b3"></span>
+  <div class="ticker" style="top:6%"><span>BREAKING · TECHNOLOGY · MARKETS · SPORTS · SCIENCE · CLIMATE · POLITICS · BUSINESS · HEALTH · </span><span>BREAKING · TECHNOLOGY · MARKETS · SPORTS · SCIENCE · CLIMATE · POLITICS · BUSINESS · HEALTH · </span></div>
+  <div class="ticker r2" style="bottom:6%"><span>LIVE · WORLD · AI · STARTUPS · CRICKET · SPACE · FINANCE · ENTERTAINMENT · CULTURE · </span><span>LIVE · WORLD · AI · STARTUPS · CRICKET · SPACE · FINANCE · ENTERTAINMENT · CULTURE · </span></div>
+  <div class="wcard">
+    <p class="kicker">📰 LIVE · PERSONAL · PICTURE-RICH</p>
+    <h1>Welcome to <span class="grad">Your News</span></h1>
+    <p class="by">Created by <b>Ayush</b></p>
+    <p class="lead">Tell us what you care about and we'll build a live news feed just for you — refreshed every hour, remembered on this device.</p>
+    <form id="wform">
+      <label for="wname">What should we call you?</label>
+      <input id="wname" required maxlength="40" placeholder="Your name or persona, e.g. Priya · Product Manager" autocomplete="name">
+      <label for="wint">Your interests (type them, or tap below)</label>
+      <textarea id="wint" required rows="3" placeholder="AI agents, Fintech India, Formula 1"></textarea>
+      <div class="sug" id="sug"></div>
+      <button class="go" type="submit">Create my news feed →</button>
+    </form>
+    <p class="fine">No sign-up. Your interests stay in your browser.</p>
+  </div>
+</section>
+
 <dialog id="dlg"><form method="dialog" id="form">
   <h3 id="dtitle">Create your persona</h3>
-  <p style="color:var(--mute);margin:0">Tell us what you want to follow. It's saved in this browser — you won't need to enter it again.</p>
   <label>Persona name</label><input id="pname" required maxlength="40" placeholder="e.g. Product Manager">
   <label>Interest areas (one per line, or separated by commas)</label>
   <textarea id="pint" required placeholder="AI agents&#10;Fintech India&#10;Formula 1"></textarea>
@@ -68,12 +123,13 @@ dialog label{display:block;margin:10px 0 4px;font-size:13px;color:var(--mute)}di
 </form></dialog>
 
 <script>
-const REFRESH_MS = 60*60*1000, MAX_INTERESTS = 10;
+const REFRESH_MS = 60*60*1000, MAX_INTERESTS = 10, POOLS = 7, TOP = "Top headlines";
 const $ = id => document.getElementById(id);
 const el = (t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e};
 const safeUrl = u => /^https?:\/\//i.test(u) ? u : "#";
 const ago = ts => {const s=Math.max(0,Date.now()/1000-ts);
   return s<60?"just now":s<3600?Math.floor(s/60)+"m ago":s<86400?Math.floor(s/3600)+"h ago":Math.floor(s/86400)+"d ago"};
+const titleKey = t => t.toLowerCase().replace(/[^a-z0-9]+/g,"").slice(0,60);
 
 // ---- persistence (localStorage, wrapped: it can throw in private windows) ----
 const KEY = "livenews.v1";
@@ -83,72 +139,119 @@ const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } c
 const current = () => state.personas.find(p => p.id === state.active) || state.personas[0];
 const parseInterests = t => [...new Set(t.split(/[\n,]/).map(s=>s.trim()).filter(Boolean))].slice(0, MAX_INTERESTS);
 state.personas.forEach(p => p.interests = parseInterests(p.interests.join("\n")));   // migrate "a, b" saved as one interest
+function createPersona(name, interests) {
+  const np = {id: crypto.randomUUID(), name, interests}; state.personas.push(np); state.active = np.id; save();
+}
 
-// ---- news ----
-let items = [], seen = new Set(), interest = "", lastLoad = 0, editingId = null;
+// ---- matching publisher stories to interests (done in the browser; publishers aren't searchable) ----
+const STOP = new Set("the a an of and or in on for to news latest top trends trend across global globe world update updates about".split(" "));
+const keywords = i => [...new Set(i.toLowerCase().match(/[a-z0-9&+#]+/g) || [])].filter(w => !STOP.has(w));
+const kwRe = k => new RegExp(k.length <= 3 ? `\\b${k.replace(/[+#&]/g,"\\$&")}\\b` : `\\b${k.replace(/[+#&]/g,"\\$&")}`, "i");
+function matcher(interest) {
+  const res = keywords(interest).map(kwRe), need = res.length <= 2 ? res.length : Math.ceil(res.length * 0.6);
+  return a => res.length && res.filter(r => r.test(a.title + " " + (a.summary || ""))).length >= need;
+}
+
+// ---- news loading ----
+let items = [], seen = new Set(), interest = "", lastLoad = 0, editingId = null, shown = 18, loadId = 0;
+const ogCache = new Map();
+let rt; const scheduleRender = () => { clearTimeout(rt); rt = setTimeout(render, 250); };
+async function getJson(path) {
+  const r = await fetch(path, {cache: "no-cache"});               // always ask the server: never reuse a stale copy
+  if (r.ok) return r.json();
+  let why = "HTTP " + r.status; try { why = (await r.json()).error || why; } catch {}
+  throw new Error(why);
+}
 
 async function load(markFresh) {
   const p = current(); if (!p) return;
+  const myLoad = ++loadId;
   $("status").textContent = "updating…";
-  const results = await Promise.allSettled(p.interests.map(i =>
-    fetch("/api/news/" + encodeURIComponent(i), {cache: "no-cache"}).then(async r => {
-      if (r.ok) return r.json();
-      let why = "HTTP " + r.status;
-      try { why = (await r.json()).error || why; } catch {}
-      throw new Error(why); })));
-  const next = [], failed = [];
-  results.forEach((r, k) => r.status === "fulfilled"
-    ? r.value.items.forEach(a => next.push({...a, interest: p.interests[k]}))
+  const [byInterest, pools] = await Promise.all([
+    Promise.allSettled(p.interests.map(i => getJson("/api/news/" + encodeURIComponent(i)))),
+    Promise.allSettled(Array.from({length: POOLS}, (_, n) => getJson("/api/pool/" + n)))]);
+  if (myLoad !== loadId) return;                                  // persona switched meanwhile
+  const all = [], failed = [];
+  byInterest.forEach((r, k) => r.status === "fulfilled"
+    ? r.value.items.forEach(a => all.push({...a, interest: p.interests[k]}))
     : failed.push(p.interests[k] + " (" + (r.reason?.message || "network error") + ")"));
-  // de-dupe the same story arriving through two interests
-  const byUrl = new Map(); next.forEach(a => byUrl.has(a.url) || byUrl.set(a.url, a));
-  const merged = [...byUrl.values()].sort((a,b)=>b.ts-a.ts);
-  const freshIds = new Set(markFresh ? merged.filter(a=>!seen.has(a.url)).map(a=>a.url) : []);
+  const matchers = p.interests.map(i => [i, matcher(i)]);
+  pools.forEach(r => r.status === "fulfilled" && r.value.items.forEach(a => {
+    const hit = matchers.find(([, m]) => m(a));
+    if (hit) all.push({...a, interest: hit[0]});
+    else if (a.rank < 2) all.push({...a, interest: TOP});         // each publisher's lead stories
+  }));
+  // de-dupe by URL and by headline, preferring the copy that has a photo
+  const byKey = new Map();
+  for (const a of all) {
+    if (!a.image && ogCache.get(a.url)) a.image = ogCache.get(a.url);
+    for (const k of [a.url, "t:" + titleKey(a.title)]) {
+      const prev = byKey.get(k);
+      if (!prev) byKey.set(k, a); else if (!prev.image && a.image) { Object.assign(prev, {image: a.image}); }
+    }
+  }
+  const merged = [...new Set(byKey.values())].sort((a,b) => b.ts - a.ts);
+  const freshIds = new Set(markFresh ? merged.filter(a => !seen.has(a.url)).map(a => a.url) : []);
   merged.forEach(a => { a.fresh = freshIds.has(a.url); seen.add(a.url); });
   items = merged; lastLoad = Date.now();
   $("warn").replaceChildren(...(failed.length ? [el("div","warn","⚠ Couldn't load: " + failed.join(", "))] : []));
-  render(); tick();
+  render(); tick(); enrich();
 }
+
+// Stories that arrived without a photo: ask the Worker for the article's own social image.
+async function enrich() {
+  const todo = items.filter(a => !a.image && !ogCache.has(a.url) && !/news\.google\.com/.test(a.url)).slice(0, 20);
+  let i = 0;
+  const run = async () => { while (i < todo.length) {
+    const a = todo[i++];
+    try { const j = await (await fetch("/api/og?url=" + encodeURIComponent(a.url))).json(); ogCache.set(a.url, j.image || ""); if (j.image) { a.image = j.image; scheduleRender(); } }
+    catch { ogCache.set(a.url, ""); }
+  } };
+  await Promise.all([run(), run(), run(), run()]);
+}
+
 function tick() {
   if (!lastLoad) return;
-  const next = new Date(lastLoad + REFRESH_MS);
-  $("status").textContent = "Updated " + new Date(lastLoad).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})
-    + " · next " + next.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
+  const f = d => new Date(d).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
+  $("status").textContent = "Updated " + f(lastLoad) + " · next " + f(lastLoad + REFRESH_MS);
 }
-let shown = 18;
-const hue = s => { let x = 0; for (const c of s) x = (x * 31 + c.charCodeAt(0)) % 360; return x; };
+
 function tile(a, hero) {
   const t = document.createElement("a");
   t.className = "tile" + (hero ? " hero" : "") + (a.fresh ? " fresh" : "");
   t.href = safeUrl(a.url); t.target = "_blank"; t.rel = "noopener noreferrer";
-  const h1 = hue(a.interest + a.source);
-  const m = el("div", "media"); m.style.setProperty("--g", `linear-gradient(135deg,hsl(${h1} 65% 42%),hsl(${(h1+45)%360} 65% 28%))`);
-  m.append(el("div", "ini", (a.source || a.interest).trim().charAt(0).toUpperCase()));
-  if (a.image) {
-    const img = document.createElement("img");
-    img.src = a.image; img.alt = ""; img.loading = "lazy"; img.referrerPolicy = "no-referrer";
-    img.onerror = () => img.remove();                 // fall back to the gradient tile
-    m.append(img);
-  }
-  m.append(el("span", "badge", a.interest)); if (a.fresh) m.append(el("span", "new", "NEW"));
+  const m = el("div", "media");
+  const img = document.createElement("img");
+  img.src = a.image; img.alt = a.title; img.loading = "lazy"; img.decoding = "async"; img.referrerPolicy = "no-referrer";
+  img.onerror = () => { a.image = ""; ogCache.set(a.url, ""); scheduleRender(); };   // broken photo -> story moves to the text list
+  m.append(img, el("span", "badge", a.interest === TOP ? "🔥 " + TOP : a.interest));
+  if (a.fresh) m.append(el("span", "new", "NEW"));
   const body = el("div", "body"); body.append(el("h2", null, a.title));
   const meta = el("div", "meta"); meta.append(el("span", null, a.source || "News"), el("span", null, ago(a.ts))); body.append(meta);
   t.append(m, body); return t;
 }
+
 function render() {
   const p = current();
   $("sub").textContent = p ? `Top stories for ${p.name} · ${new Date().toLocaleDateString([], {weekday:"long", day:"numeric", month:"long"})}` : "";
-  $("chips").replaceChildren(...["All", ...(p?.interests||[])].map(n => {
-    const b = el("button","chip"+((n==="All"&&!interest)||n===interest?" act":""),n);
+  const hasTop = items.some(a => a.interest === TOP);
+  $("chips").replaceChildren(...["All", ...(hasTop ? [TOP] : []), ...(p?.interests||[])].map(n => {
+    const b = el("button","chip"+((n==="All"&&!interest)||n===interest?" act":""), n === TOP ? "🔥 " + TOP : n);
     b.onclick = () => { interest = n==="All" ? "" : n; shown = 18; render(); }; return b; }));
   const list = items.filter(a => !interest || a.interest === interest);
-  // lead with the freshest story that has a picture
-  const lead = list.findIndex(a => a.image);
-  if (lead > 0) list.unshift(...list.splice(lead, 1));
+  const pics = list.filter(a => a.image), text = list.filter(a => !a.image);
   if (!list.length) { $("feed").replaceChildren(el("div","empty", lastLoad ? "No recent stories for this interest." : "Loading headlines…")); return; }
-  const grid = el("div", "grid"); list.slice(0, shown).forEach((a, i) => grid.append(tile(a, i === 0)));
-  const nodes = [grid];
-  if (list.length > shown) { const more = el("button", "more", `Show more (${list.length - shown})`); more.onclick = () => { shown += 18; render(); }; nodes.push(more); }
+  const nodes = [];
+  if (pics.length) {
+    const grid = el("div", "grid"); pics.slice(0, shown).forEach((a, i) => grid.append(tile(a, i === 0))); nodes.push(grid);
+    if (pics.length > shown) { const more = el("button", "more", `Show more (${pics.length - shown})`); more.onclick = () => { shown += 18; render(); }; nodes.push(more); }
+  }
+  if (text.length) {
+    const rows = el("div", "rows");
+    text.slice(0, 15).forEach(a => { const r = el("a"); r.href = safeUrl(a.url); r.target = "_blank"; r.rel = "noopener noreferrer";
+      r.append(el("span", null, a.title), el("small", null, (a.source || "") + " · " + ago(a.ts))); rows.append(r); });
+    nodes.push(el("h3", "sec", "More headlines"), rows);
+  }
   $("feed").replaceChildren(...nodes);
 }
 function renderPersonas() {
@@ -156,26 +259,44 @@ function renderPersonas() {
   for (const id of ["edit","share","persona","refresh"]) $(id).hidden = !state.personas.length;
 }
 
-// ---- persona dialog ----
+// ---- welcome screen (first visit) ----
+const SUGGEST = ["AI","Technology","Business","Finance & markets","Startups","Politics","Sports","Cricket","Health","Science","Climate","Entertainment"];
+$("sug").replaceChildren(...SUGGEST.map(s => { const b = el("button", null, s); b.type = "button";
+  b.onclick = () => { const cur = parseInterests($("wint").value), has = cur.some(x => x.toLowerCase() === s.toLowerCase());
+    $("wint").value = (has ? cur.filter(x => x.toLowerCase() !== s.toLowerCase()) : [...cur, s]).join(", ");
+    b.classList.toggle("on", !has); }; return b; }));
+function showWelcome() { $("welcome").classList.remove("out"); $("welcome").hidden = false; setTimeout(() => $("wname").focus(), 300); }
+function hideWelcome() { const w = $("welcome"); w.classList.add("out"); setTimeout(() => { w.hidden = true; }, 500); }
+$("wform").onsubmit = e => {
+  e.preventDefault();
+  const interests = parseInterests($("wint").value), name = $("wname").value.trim();
+  if (!name || !interests.length) return;
+  createPersona(name, interests); hideWelcome(); switchPersona();
+};
+
+// ---- persona dialog (+ New / Edit) ----
 function openDialog(p) {
   editingId = p?.id || null;
-  $("dtitle").textContent = p ? "Edit persona" : "Create your persona";
+  $("dtitle").textContent = p ? "Edit persona" : "New persona";
   $("pname").value = p?.name || ""; $("pint").value = p?.interests.join("\n") || "";
   $("ddel").hidden = !p; $("dlg").showModal();
 }
 $("form").onsubmit = e => {
   const act = e.submitter?.value;
-  if (act === "delete") { state.personas = state.personas.filter(p => p.id !== editingId); state.active = state.personas[0]?.id || null; }
+  if (act === "delete") { state.personas = state.personas.filter(p => p.id !== editingId); state.active = state.personas[0]?.id || null; save(); }
   else if (act === "ok") {
     const interests = parseInterests($("pint").value), name = $("pname").value.trim();
     if (!interests.length || !name) return;
     const p = state.personas.find(x => x.id === editingId);
-    if (p) { p.name = name; p.interests = interests; }
-    else { const np = {id: crypto.randomUUID(), name, interests}; state.personas.push(np); state.active = np.id; }
+    if (p) { p.name = name; p.interests = interests; save(); } else createPersona(name, interests);
   } else return;
-  save(); switchPersona();
+  switchPersona();
 };
-function switchPersona() { interest=""; items=[]; seen=new Set(); lastLoad=0; renderPersonas(); render(); if (current()) load(false); else openDialog(); }
+function switchPersona() {
+  interest = ""; items = []; seen = new Set(); lastLoad = 0; shown = 18; loadId++;
+  renderPersonas(); render();
+  if (current()) { $("status").textContent = ""; load(false); } else { $("status").textContent = ""; showWelcome(); }
+}
 
 $("persona").onchange = e => { state.active = e.target.value; save(); switchPersona(); };
 $("new").onclick = () => openDialog();
@@ -190,25 +311,27 @@ $("share").onclick = async () => {
 
 // ---- shared-persona link: #p=<base64 json> ----
 function checkSharedLink() {
-  const m = location.hash.match(/^#p=(.+)$/); if (!m) return;
+  const m = location.hash.match(/^#p=(.+)$/); if (!m) return false;
   try {
     const d = JSON.parse(decodeURIComponent(escape(atob(m[1]))));
     const interests = (Array.isArray(d.i) ? d.i : []).map(String).slice(0, MAX_INTERESTS), name = String(d.n||"Shared persona").slice(0,40);
-    if (!interests.length) return;
+    if (!interests.length) return false;
     const b = el("div","banner"); b.append(el("span",null,`Save the shared persona “${name}” (${interests.join(", ")})?`));
     const yes = el("button","primary","Save"), no = el("button",null,"Dismiss");
-    yes.onclick = () => { const np={id:crypto.randomUUID(),name,interests}; state.personas.push(np); state.active=np.id; save(); b.remove(); history.replaceState(null,"",location.pathname); switchPersona(); };
-    no.onclick = () => { b.remove(); history.replaceState(null,"",location.pathname); };
-    b.append(yes, no); $("banner").append(b);
-  } catch {}
+    const done = () => { b.remove(); history.replaceState(null,"",location.pathname); };
+    yes.onclick = () => { createPersona(name, interests); done(); switchPersona(); };
+    no.onclick = () => { done(); if (!current()) showWelcome(); };
+    b.append(yes, no); $("banner").append(b); return true;
+  } catch { return false; }
 }
 
 // ---- hourly auto-refresh (also catches up when a sleeping tab/phone wakes) ----
 setInterval(() => { if (Date.now() - lastLoad >= REFRESH_MS) load(true); else render(); tick(); }, 60*1000);
-document.addEventListener("visibilitychange", () => { if (!document.hidden && Date.now() - lastLoad >= REFRESH_MS) load(true); });
+document.addEventListener("visibilitychange", () => { if (!document.hidden && lastLoad && Date.now() - lastLoad >= REFRESH_MS) load(true); });
 
-renderPersonas(); render(); checkSharedLink();
-if (current()) load(false); else if (!location.hash.startsWith("#p=")) openDialog();
+renderPersonas(); render();
+const shared = checkSharedLink();
+if (current()) load(false); else if (!shared) showWelcome();
 </script>
 </body>
 </html>

@@ -42,8 +42,18 @@ Local preview: `npm run dev` (http://localhost:8787). Tests: `npm test`.
 | English only | Both feeds are requested in their English edition, and the Worker also drops any story whose title is in another language. |
 | Refresh every hour | The page reloads feeds every 60 min (and when a sleeping tab wakes); the Worker's upstream fetch is edge-cached for 60 min, so everyone sees the same hourly snapshot. |
 
+## News sources & pictures
+- **Per interest:** Bing News, Google News and GDELT (a free global news index with article photos), merged and de-duplicated.
+- **Popular publishers:** BBC, The Guardian, NYT, CNBC, Al Jazeera, TechCrunch, Times of India, Economic Times,
+  The Hindu, NDTV, Hindustan Times, WIRED. Their stories are matched to each person's interests in the browser;
+  each publisher's lead stories also appear under **🔥 Top headlines**. Edit the list in `src/feeds.js`.
+- **Pictures:** taken from the feeds themselves; for stories without one the Worker reads the article's own social-share
+  image (`og:image`). Stories that still have no real photo are listed under *More headlines* instead of getting a placeholder tile.
+- A feed that is down is skipped; the Worker never fails because one source did.
+- Cloudflare's free plan limits CPU time per request, so publisher feeds are fetched 2 at a time (`/api/pool/0…6`).
+
 ## Capacity & limits (free tier)
-- Each page load = 1 Worker request per interest (max 10 per persona). 100k/day ≈ 10k+ page loads/day.
+- Each page load = 1 Worker request per interest (max 10), plus 7 publisher batches and a few photo lookups, so ≈ 15–25 requests. 100k/day ≈ 4–6k page loads/day.
   Hourly refreshes from open tabs count too. Identical interests across users share the edge cache,
   so Google News is hit roughly once per interest per hour, not per user.
 - Personas live in one browser. Clearing site data or switching browsers loses them — use **Share**
