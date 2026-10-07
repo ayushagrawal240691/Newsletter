@@ -13,13 +13,25 @@ h1{font-size:17px;margin:0}
 select,button,input,textarea{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:6px 10px}
 button{cursor:pointer}button:hover{border-color:var(--accent)}button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
 .status{margin-left:auto;color:var(--mute);font-size:13px}
-main{max-width:860px;margin:0 auto;padding:16px}
-.chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
-.chip{border-radius:99px;padding:4px 12px;font-size:13px}.chip.act{background:var(--accent);border-color:var(--accent);color:#fff}
-.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin-bottom:10px}
-.card.fresh{border-left:4px solid var(--new)}
-.card a{color:var(--ink);text-decoration:none;font-weight:600;font-size:16px}.card a:hover{color:var(--accent)}
-.meta{color:var(--mute);font-size:12.5px;margin-top:4px;display:flex;gap:8px;flex-wrap:wrap}.tag{color:var(--accent)}
+main{max-width:1100px;margin:0 auto;padding:16px}
+.sub{color:var(--mute);font-size:13px;margin:0 0 14px}
+.chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;margin-bottom:14px;scrollbar-width:thin}
+.chip{border-radius:99px;padding:5px 14px;font-size:13px;white-space:nowrap;flex:none}.chip.act{background:var(--accent);border-color:var(--accent);color:#fff}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:16px}
+@media(min-width:720px){.tile.hero{grid-column:span 2}.tile.hero .media{aspect-ratio:21/9}.tile.hero h2{font-size:22px;-webkit-line-clamp:3}}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;display:flex;flex-direction:column;text-decoration:none;color:var(--ink);transition:transform .15s,box-shadow .15s}
+.tile:hover{transform:translateY(-3px);box-shadow:0 10px 24px rgba(0,0,0,.14)}
+.tile.fresh{outline:2px solid var(--new)}
+.media{position:relative;aspect-ratio:16/9;background:var(--g);overflow:hidden}
+.media img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.media .ini{position:absolute;inset:0;display:grid;place-items:center;font-size:64px;font-weight:800;color:rgba(255,255,255,.35)}
+.badge{position:absolute;left:10px;top:10px;background:rgba(0,0,0,.6);color:#fff;font-size:11.5px;padding:3px 9px;border-radius:99px;max-width:80%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;backdrop-filter:blur(4px)}
+.new{position:absolute;right:10px;top:10px;background:var(--new);color:#06220f;font-size:11px;font-weight:700;padding:3px 8px;border-radius:99px}
+.body{padding:12px 14px 14px;display:flex;flex-direction:column;gap:8px;flex:1}
+.tile h2{margin:0;font-size:16px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.meta{color:var(--mute);font-size:12.5px;margin-top:auto;display:flex;justify-content:space-between;gap:8px}
+.meta span:first-child{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.more{display:block;margin:20px auto}
 .empty{color:var(--mute);text-align:center;padding:40px 0}
 .banner{background:var(--card);border:1px solid var(--accent);border-radius:12px;padding:12px 16px;margin-bottom:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .warn{color:#b45309;font-size:13px;margin-bottom:8px}
@@ -39,6 +51,7 @@ dialog label{display:block;margin:10px 0 4px;font-size:13px;color:var(--mute)}di
 </header>
 <main>
   <div id="banner"></div>
+  <p class="sub" id="sub"></p>
   <div class="chips" id="chips"></div>
   <div id="warn"></div>
   <div id="feed"></div>
@@ -48,7 +61,7 @@ dialog label{display:block;margin:10px 0 4px;font-size:13px;color:var(--mute)}di
   <h3 id="dtitle">Create your persona</h3>
   <p style="color:var(--mute);margin:0">Tell us what you want to follow. It's saved in this browser — you won't need to enter it again.</p>
   <label>Persona name</label><input id="pname" required maxlength="40" placeholder="e.g. Product Manager">
-  <label>Interest areas (one per line)</label>
+  <label>Interest areas (one per line, or separated by commas)</label>
   <textarea id="pint" required placeholder="AI agents&#10;Fintech India&#10;Formula 1"></textarea>
   <p><button class="primary" value="ok">Save</button> <button value="cancel" formnovalidate>Cancel</button>
   <button value="delete" id="ddel" formnovalidate style="float:right">Delete</button></p>
@@ -68,7 +81,8 @@ let state = {personas:[], active:null};
 try { state = Object.assign(state, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch {}
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {} };
 const current = () => state.personas.find(p => p.id === state.active) || state.personas[0];
-const parseInterests = t => [...new Set(t.split("\n").map(s=>s.trim()).filter(Boolean))].slice(0, MAX_INTERESTS);
+const parseInterests = t => [...new Set(t.split(/[\n,]/).map(s=>s.trim()).filter(Boolean))].slice(0, MAX_INTERESTS);
+state.personas.forEach(p => p.interests = parseInterests(p.interests.join("\n")));   // migrate "a, b" saved as one interest
 
 // ---- news ----
 let items = [], seen = new Set(), interest = "", lastLoad = 0, editingId = null;
@@ -101,17 +115,41 @@ function tick() {
   $("status").textContent = "Updated " + new Date(lastLoad).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})
     + " · next " + next.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
 }
+let shown = 18;
+const hue = s => { let x = 0; for (const c of s) x = (x * 31 + c.charCodeAt(0)) % 360; return x; };
+function tile(a, hero) {
+  const t = document.createElement("a");
+  t.className = "tile" + (hero ? " hero" : "") + (a.fresh ? " fresh" : "");
+  t.href = safeUrl(a.url); t.target = "_blank"; t.rel = "noopener noreferrer";
+  const h1 = hue(a.interest + a.source);
+  const m = el("div", "media"); m.style.setProperty("--g", `linear-gradient(135deg,hsl(${h1} 65% 42%),hsl(${(h1+45)%360} 65% 28%))`);
+  m.append(el("div", "ini", (a.source || a.interest).trim().charAt(0).toUpperCase()));
+  if (a.image) {
+    const img = document.createElement("img");
+    img.src = a.image; img.alt = ""; img.loading = "lazy"; img.referrerPolicy = "no-referrer";
+    img.onerror = () => img.remove();                 // fall back to the gradient tile
+    m.append(img);
+  }
+  m.append(el("span", "badge", a.interest)); if (a.fresh) m.append(el("span", "new", "NEW"));
+  const body = el("div", "body"); body.append(el("h2", null, a.title));
+  const meta = el("div", "meta"); meta.append(el("span", null, a.source || "News"), el("span", null, ago(a.ts))); body.append(meta);
+  t.append(m, body); return t;
+}
 function render() {
   const p = current();
+  $("sub").textContent = p ? `Top stories for ${p.name} · ${new Date().toLocaleDateString([], {weekday:"long", day:"numeric", month:"long"})}` : "";
   $("chips").replaceChildren(...["All", ...(p?.interests||[])].map(n => {
     const b = el("button","chip"+((n==="All"&&!interest)||n===interest?" act":""),n);
-    b.onclick = () => { interest = n==="All" ? "" : n; render(); }; return b; }));
+    b.onclick = () => { interest = n==="All" ? "" : n; shown = 18; render(); }; return b; }));
   const list = items.filter(a => !interest || a.interest === interest);
-  $("feed").replaceChildren(...(list.length ? list.map(a => {
-    const c = el("div","card"+(a.fresh?" fresh":""));
-    const l = el("a",null,a.title); l.href = safeUrl(a.url); l.target="_blank"; l.rel="noopener noreferrer"; c.append(l);
-    const m = el("div","meta"); m.append(el("span","tag",a.interest), el("span",null,a.source), el("span",null,ago(a.ts))); c.append(m);
-    return c; }) : [el("div","empty", lastLoad ? "No recent stories for this interest." : "Loading headlines…")]));
+  // lead with the freshest story that has a picture
+  const lead = list.findIndex(a => a.image);
+  if (lead > 0) list.unshift(...list.splice(lead, 1));
+  if (!list.length) { $("feed").replaceChildren(el("div","empty", lastLoad ? "No recent stories for this interest." : "Loading headlines…")); return; }
+  const grid = el("div", "grid"); list.slice(0, shown).forEach((a, i) => grid.append(tile(a, i === 0)));
+  const nodes = [grid];
+  if (list.length > shown) { const more = el("button", "more", `Show more (${list.length - shown})`); more.onclick = () => { shown += 18; render(); }; nodes.push(more); }
+  $("feed").replaceChildren(...nodes);
 }
 function renderPersonas() {
   $("persona").replaceChildren(...state.personas.map(p => { const o = el("option",null,p.name); o.value=p.id; o.selected=p.id===current()?.id; return o; }));

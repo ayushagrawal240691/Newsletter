@@ -21,6 +21,13 @@ const BING = `<rss><channel><item><title>Bing story</title>
 <link>https://www.bing.com/news/apiclick.aspx?ref=x&amp;url=https%3a%2f%2fnews.example.org%2fa&amp;c=1</link>
 <pubDate>Wed, 07 Oct 2026 10:00:00 GMT</pubDate><News:Source>Example News</News:Source></item></channel></rss>`;
 const req = (q) => new Request("https://app.test/api/news?q=" + encodeURIComponent(q));
+const EMPTY = "<rss><channel></channel></rss>";
+
+test("parseRss exposes Bing thumbnails as a sized https image", () => {
+  const [it] = parseRss(BING.replace("</News:Source>", `</News:Source><News:Image>https://www.bing.com/th?id=ON.X&amp;pid=News</News:Image>`));
+  assert.match(it.image, /^https:\/\/www\.bing\.com\/th\?id=ON\.X&pid=News&w=640&h=360/);
+  assert.equal(parseRss(RSS)[0].image, "");
+});
 
 test("handleNews normalises query, requests 1h edge caching, rejects bad input", async () => {
   const seen = [];
@@ -28,14 +35,23 @@ test("handleNews normalises query, requests 1h edge caching, rejects bad input",
   const a = await handleNews(req("  AI  chips"));
   await handleNews(req("ai chips"));
   assert.equal(a.headers.get("Cache-Control"), "public, max-age=3600");
-  assert.equal(seen[0].url, seen[1].url);
-  assert.deepEqual(seen[0].init.cf, { cacheTtl: 3600, cacheEverything: true });
+  assert.deepEqual(new Set(seen.slice(0, 2).map((x) => x.url)), new Set(seen.slice(2, 4).map((x) => x.url)));
+  assert.ok(seen.every((x) => x.init.cf.cacheTtl === 3600 && x.init.cf.cacheEverything));
   assert.equal((await a.json()).items.length, 2);
   assert.equal((await handleNews(req(""))).status, 400);
   assert.equal((await handleNews(req("x".repeat(101)))).status, 400);
 });
 
-test("falls back to Bing when Google refuses, and unwraps Bing redirect links", async () => {
+test("merges Bing + Google, de-dupes by title and keeps the copy that has an image", async () => {
+  const bing = `<rss><channel><item><title>Chip &amp; AI boom</title><link>https://b.example/1</link>
+<pubDate>Wed, 07 Oct 2026 10:00:00 GMT</pubDate><News:Image>https://www.bing.com/th?id=A</News:Image></item></channel></rss>`;
+  globalThis.fetch = async (url) => new Response(url.includes("bing.com") ? bing : RSS);
+  const { items } = await (await handleNews(req("ai"))).json();
+  assert.equal(items.length, 2);                       // "Chip & AI boom" counted once + "Older story"
+  assert.ok(items.find((i) => i.title === "Chip & AI boom").image);
+});
+
+test("works when Google refuses, and unwraps Bing redirect links", async () => {
   globalThis.fetch = async (url) => url.includes("google") ? new Response("blocked", { status: 429 }) : new Response(BING);
   const body = await (await handleNews(req("ai"))).json();
   assert.equal(body.items[0].url, "https://news.example.org/a");
@@ -44,9 +60,9 @@ test("falls back to Bing when Google refuses, and unwraps Bing redirect links", 
 
 test("widens Google to 7 days when 1 day is empty", async () => {
   const urls = [];
-  globalThis.fetch = async (url) => (urls.push(url), new Response(url.includes("when%3A7d") ? RSS : "<rss><channel></channel></rss>"));
+  globalThis.fetch = async (url) => (urls.push(url), new Response(url.includes("when%3A7d") ? RSS : EMPTY));
   assert.equal((await (await handleNews(req("niche"))).json()).items.length, 2);
-  assert.equal(urls.length, 2);
+  assert.ok(urls.some((u) => u.includes("when%3A1d")) && urls.some((u) => u.includes("when%3A7d")));
 });
 
 test("reports which sources failed when all fail", async () => {

@@ -5,7 +5,7 @@
 
 const CACHE_SECONDS = 3600;
 const MAX_QUERY_LEN = 100;
-const MAX_ITEMS = 40;
+const MAX_ITEMS = 30;
 
 const ENTITIES = { "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#39;": "'", "&apos;": "'" };
 const decode = (s) =>
@@ -31,7 +31,11 @@ export function parseRss(xml) {
     const source = tag(block, "source") || tag(block, "News:Source");
     if (source && title.endsWith(" - " + source)) title = title.slice(0, -source.length - 3);
     const ts = Date.parse(tag(block, "pubDate")) || Date.now();
-    if (title && /^https?:\/\//.test(url)) items.push({ title, url, source, ts: Math.floor(ts / 1000) });
+    let image = tag(block, "News:Image");
+    if (image.startsWith("//")) image = "https:" + image;
+    if (image.includes("bing.com/th")) image += "&w=640&h=360&c=7&rs=2";   // ask Bing for a 16:9 crop
+    if (!/^https:\/\//.test(image)) image = "";
+    if (title && /^https?:\/\//.test(url)) items.push({ title, url, source, image, ts: Math.floor(ts / 1000) });
   }
   return items.sort((a, b) => b.ts - a.ts).slice(0, MAX_ITEMS);
 }
@@ -42,30 +46,44 @@ const json = (body, status = 200, extra = {}) =>
     headers: { "Content-Type": "application/json", ...extra },
   });
 
-// Sources are tried in order; the first one that returns items wins. Google News sometimes
-// refuses requests from datacenter IPs, so Bing News RSS is the fallback.
-const SOURCES = [
-  (q, days) => `https://news.google.com/rss/search?q=${encodeURIComponent(`${q} when:${days}d`)}&hl=en-US&gl=US&ceid=US:en`,
-  (q) => `https://www.bing.com/news/search?q=${encodeURIComponent(q)}&format=rss&qft=interval%3d%224%22`,
-];
+// Bing News RSS carries a thumbnail per story; Google News RSS does not but has broader coverage.
+// Both are queried in parallel and merged, so most tiles get an image and one source being
+// blocked (datacenter IPs are sometimes refused) doesn't empty the dashboard.
 const HEADERS = { "User-Agent": "Mozilla/5.0 (compatible; NewsDashboard/1.0)", Accept: "application/rss+xml, text/xml, */*" };
+const CF = { cacheTtl: CACHE_SECONDS, cacheEverything: true };
+const bingUrl = (q) => `https://www.bing.com/news/search?q=${encodeURIComponent(q)}&format=rss&qft=sortbydate%3d%221%22`;
+const googleUrl = (q, days) => `https://news.google.com/rss/search?q=${encodeURIComponent(`${q} when:${days}d`)}&hl=en-US&gl=US&ceid=US:en`;
 
-async function fetchItems(q) {
-  const errors = [];
-  for (const [i, build] of SOURCES.entries()) {
-    const name = i === 0 ? "google" : "bing";
-    for (const days of i === 0 ? [1, 7] : [1]) {       // widen to a week if the last day is empty
-      try {
-        const res = await fetch(build(q, days), { headers: HEADERS, cf: { cacheTtl: CACHE_SECONDS, cacheEverything: true } });
-        if (!res.ok) { errors.push(`${name} ${res.status}`); break; }
-        const items = parseRss(await res.text());
-        if (items.length) return { items, errors };
-      } catch (e) {
-        errors.push(`${name} unreachable`); break;
-      }
+async function pull(name, urls) {
+  let error = "";
+  for (const url of urls) {               // later URLs widen the search if the first is empty
+    try {
+      const res = await fetch(url, { headers: HEADERS, cf: CF });
+      if (!res.ok) return { items: [], error: `${name} ${res.status}` };
+      const items = parseRss(await res.text());
+      if (items.length) return { items, error: "" };
+    } catch {
+      error = `${name} unreachable`;
+      break;
     }
   }
-  return { items: [], errors };
+  return { items: [], error };
+}
+
+const titleKey = (t) => t.toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 60);
+
+export function mergeItems(...lists) {
+  const byTitle = new Map();
+  for (const it of lists.flat()) {
+    const k = titleKey(it.title), prev = byTitle.get(k);
+    if (!prev || (!prev.image && it.image)) byTitle.set(k, prev ? { ...it, ts: Math.max(it.ts, prev.ts) } : it);
+  }
+  return [...byTitle.values()].sort((a, b) => b.ts - a.ts).slice(0, MAX_ITEMS);
+}
+
+async function fetchItems(q) {
+  const [bing, google] = await Promise.all([pull("bing", [bingUrl(q)]), pull("google", [googleUrl(q, 1), googleUrl(q, 7)])]);
+  return { items: mergeItems(bing.items, google.items), errors: [google.error, bing.error].filter(Boolean) };
 }
 
 export async function handleNews(request) {
