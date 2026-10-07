@@ -77,10 +77,15 @@ async function load(markFresh) {
   const p = current(); if (!p) return;
   $("status").textContent = "updating…";
   const results = await Promise.allSettled(p.interests.map(i =>
-    fetch("/api/news?q=" + encodeURIComponent(i)).then(r => r.ok ? r.json() : Promise.reject(r.status))));
+    fetch("/api/news?q=" + encodeURIComponent(i)).then(async r => {
+      if (r.ok) return r.json();
+      let why = "HTTP " + r.status;
+      try { why = (await r.json()).error || why; } catch {}
+      throw new Error(why); })));
   const next = [], failed = [];
   results.forEach((r, k) => r.status === "fulfilled"
-    ? r.value.items.forEach(a => next.push({...a, interest: p.interests[k]})) : failed.push(p.interests[k]));
+    ? r.value.items.forEach(a => next.push({...a, interest: p.interests[k]}))
+    : failed.push(p.interests[k] + " (" + (r.reason?.message || "network error") + ")"));
   // de-dupe the same story arriving through two interests
   const byUrl = new Map(); next.forEach(a => byUrl.has(a.url) || byUrl.set(a.url, a));
   const merged = [...byUrl.values()].sort((a,b)=>b.ts-a.ts);
