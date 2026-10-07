@@ -56,7 +56,7 @@ Each persona has a country (chosen on the welcome page, or later via **Edit**; e
 - **Per interest:** Bing News, Google News and GDELT (a free global news index with article photos), merged and de-duplicated.
 - **Popular publishers:** BBC, The Guardian, NYT, CNBC, Al Jazeera, TechCrunch, Times of India, Economic Times,
   The Hindu, NDTV, Hindustan Times, WIRED. Their stories are matched to each person's interests in the browser;
-  each publisher's lead stories also appear under **🔥 Top headlines**. Edit the list in `src/feeds.js`.
+  each publisher's lead stories are shown under **🔥 Top headlines** only if the user opts in (button under the interest box). Otherwise only the user's own interests are shown. Edit the list in `src/feeds.js`.
 - **Pictures:** taken from the feeds themselves; for stories without one the Worker reads the article's own social-share
   image (`og:image`). Stories that still have no real photo are listed under *More headlines* instead of getting a placeholder tile.
 - A feed that is down is skipped; the Worker never fails because one source did.

@@ -71,6 +71,8 @@ dialog label{display:block;margin:10px 0 4px;font-size:13px;color:var(--mute)}di
 #welcome label{display:block;font-size:12.5px;color:#cbd5e1;margin:2px 0 5px}
 .sug{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 14px}
 .sug button{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.22);color:#fff;border-radius:99px;font-size:12.5px;padding:3px 11px}
+.topbtn{display:block;width:100%;text-align:left;margin:0 0 10px;border-radius:10px;font-size:13px;padding:7px 12px;background:rgba(251,146,60,.14);border:1px dashed #fb923c;color:#fb923c}
+.topbtn.on{background:#fb923c;color:#1f1300;border-style:solid}
 .sug button.on{background:#7c3aed;border-color:#7c3aed}
 #welcome .go{width:100%;padding:12px;font-weight:700;font-size:16px;background:linear-gradient(90deg,#6366f1,#ec4899);border:0;color:#fff;border-radius:12px}
 .fine{color:#94a3b8;font-size:12px;margin:12px 0 0;text-align:center}
@@ -111,6 +113,7 @@ dialog label{display:block;margin:10px 0 4px;font-size:13px;color:var(--mute)}di
       <select id="wcountry" required></select>
       <label for="wint">Your interests (type them, or tap below)</label>
       <textarea id="wint" required rows="3" placeholder="AI agents, Fintech India, Formula 1"></textarea>
+      <button type="button" class="topbtn" id="wtop"></button>
       <div class="sug" id="sug"></div>
       <button class="go" type="submit">Create my news feed →</button>
     </form>
@@ -124,6 +127,7 @@ dialog label{display:block;margin:10px 0 4px;font-size:13px;color:var(--mute)}di
   <label>Country <span style="opacity:.7">(≈75% local news, ≈25% world's biggest stories)</span></label><select id="pcountry" style="width:100%"></select>
   <label>Interest areas (one per line, or separated by commas)</label>
   <textarea id="pint" required placeholder="AI agents&#10;Fintech India&#10;Formula 1"></textarea>
+  <button type="button" class="topbtn" id="ptop"></button>
   <p><button class="primary" value="ok">Save</button> <button value="cancel" formnovalidate>Cancel</button>
   <button value="delete" id="ddel" formnovalidate style="float:right">Delete</button></p>
 </form></dialog>
@@ -143,7 +147,8 @@ let state = {personas:[], active:null};
 try { state = Object.assign(state, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch {}
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {} };
 const current = () => state.personas.find(p => p.id === state.active) || state.personas[0];
-const parseInterests = t => [...new Set(t.split(/[\n,]/).map(s=>s.trim()).filter(Boolean))].slice(0, MAX_INTERESTS);
+// "Top headlines" is opt-in: it is just another interest the user can add (button below the field).
+const parseInterests = t => [...new Set(t.split(/[\n,]/).map(s=>s.trim()).filter(Boolean).map(s => s.toLowerCase() === TOP.toLowerCase() ? TOP : s))].slice(0, MAX_INTERESTS);
 state.personas.forEach(p => { p.interests = parseInterests(p.interests.join("\n")); p.country = p.country || ""; });   // migrate older saves
 function createPersona(name, interests, country) {
   const np = {id: crypto.randomUUID(), name, interests, country: country || ""}; state.personas.push(np); state.active = np.id; save();
@@ -193,21 +198,22 @@ async function load(markFresh) {
   const myLoad = ++loadId;
   $("status").textContent = "updating…";
   const mix = mixOn(p), cc = mix ? p.country : "";
+  const terms = p.interests.filter(i => i !== TOP), topOn = p.interests.includes(TOP);   // only what the user asked for
   const keysP = getJson("/api/pools/" + (cc || "xx")).then(r => r.keys).catch(() => ["g-0","g-1","g-2","g-3","g-4"]);
   const [byInterest, pools] = await Promise.all([
-    Promise.allSettled(p.interests.map(i => getJson("/api/news/" + (cc ? cc + "/" : "") + encodeURIComponent(i)))),
+    Promise.allSettled(terms.map(i => getJson("/api/news/" + (cc ? cc + "/" : "") + encodeURIComponent(i)))),
     keysP.then(keys => Promise.allSettled(keys.map(k => getJson("/api/pool/" + k))))]);
   if (myLoad !== loadId) return;                                  // persona switched meanwhile
   const all = [], failed = [];
   byInterest.forEach((r, k) => r.status === "fulfilled"
-    ? r.value.items.forEach(a => all.push({...a, interest: p.interests[k], scope: mix ? (a.scope || "local") : "local"}))
-    : failed.push(p.interests[k] + " (" + (r.reason?.message || "network error") + ")"));
-  const matchers = p.interests.map(i => [i, matcher(i)]);
+    ? r.value.items.forEach(a => all.push({...a, interest: terms[k], labels: [terms[k]], scope: mix ? (a.scope || "local") : "local"}))
+    : failed.push(terms[k] + " (" + (r.reason?.message || "network error") + ")"));
+  const matchers = terms.map(i => [i, matcher(i)]);
   pools.forEach(r => r.status === "fulfilled" && r.value.items.forEach(a => {
-    const hit = matchers.find(([, m]) => m(a));
-    const scope = mix && a.home !== cc ? "intl" : "local";         // publisher's home country decides
-    if (hit) all.push({...a, interest: hit[0], scope});
-    else if (a.rank < 2) all.push({...a, interest: TOP, scope});   // each publisher's lead stories
+    const labels = matchers.filter(([, m]) => m(a)).map(([i]) => i);
+    if (topOn && a.rank < 2) labels.push(TOP);                     // each publisher's lead stories - only if "Top headlines" was chosen
+    if (!labels.length) return;                                    // not one of the user's interests -> not shown
+    all.push({...a, interest: labels[0], labels, scope: mix && a.home !== cc ? "intl" : "local"});   // publisher's home country decides scope
   }));
   // de-dupe by URL and by headline, preferring the copy that has a photo
   const byKey = new Map();
@@ -215,7 +221,11 @@ async function load(markFresh) {
     if (!a.image && ogCache.get(a.url)) a.image = ogCache.get(a.url);
     for (const k of [a.url, "t:" + titleKey(a.title)]) {
       const prev = byKey.get(k);
-      if (!prev) byKey.set(k, a); else if (!prev.image && a.image) { Object.assign(prev, {image: a.image}); }
+      if (!prev) byKey.set(k, a);
+      else if (prev !== a) {                                       // same story via two routes: keep one tile, remember every interest it fits
+        if (!prev.image && a.image) prev.image = a.image;
+        prev.labels = [...new Set([...prev.labels, ...a.labels])];
+      }
     }
   }
   const merged = [...new Set(byKey.values())].sort((a,b) => b.ts - a.ts);
@@ -244,6 +254,7 @@ function tick() {
   $("status").textContent = "Updated " + f(lastLoad) + " · next " + f(lastLoad + REFRESH_MS);
 }
 
+const shownLabel = a => interest && a.labels.includes(interest) ? interest : a.interest;
 function tile(a, hero) {
   const t = document.createElement("a");
   t.className = "tile" + (hero ? " hero" : "") + (a.fresh ? " fresh" : "");
@@ -253,7 +264,7 @@ function tile(a, hero) {
   const img = document.createElement("img");
   img.src = a.image; img.alt = a.title; img.loading = "lazy"; img.decoding = "async"; img.referrerPolicy = "no-referrer";
   img.onerror = () => { a.image = ""; ogCache.set(a.url, ""); scheduleRender(); };   // broken photo -> story moves to the text list
-  m.append(img, el("span", "badge", (a.scope === "intl" ? "🌍 " : "") + (a.interest === TOP ? "🔥 " + TOP : a.interest)));
+  m.append(img, el("span", "badge", (a.scope === "intl" ? "🌍 " : "") + (shownLabel(a) === TOP ? "🔥 " + TOP : shownLabel(a))));
   if (a.fresh) m.append(el("span", "new", "NEW"));
   const body = el("div", "body"); body.append(el("h2", null, a.title));
   const meta = el("div", "meta"); meta.append(el("span", null, a.source || "News"), el("span", null, ago(a.ts))); body.append(meta);
@@ -277,11 +288,10 @@ function render() {
   const p = current();
   const where = mixOn(p) ? ` · ${flag(p.country)} ${countryName(p.country)} + world` : "";
   $("sub").textContent = p ? `Top stories for ${p.name}${where} · ${new Date().toLocaleDateString([], {weekday:"long", day:"numeric", month:"long"})}` : "";
-  const hasTop = items.some(a => a.interest === TOP);
-  $("chips").replaceChildren(...["All", ...(hasTop ? [TOP] : []), ...(p?.interests||[])].map(n => {
+  $("chips").replaceChildren(...["All", ...(p?.interests||[])].map(n => {
     const b = el("button","chip"+((n==="All"&&!interest)||n===interest?" act":""), n === TOP ? "🔥 " + TOP : n);
     b.onclick = () => { interest = n==="All" ? "" : n; shown = 18; render(); }; return b; }));
-  const list = items.filter(a => !interest || a.interest === interest);
+  const list = items.filter(a => !interest || a.labels.includes(interest));
   const pics = interleave(list.filter(a => a.image)), text = interleave(list.filter(a => !a.image));
   if (!list.length) { $("feed").replaceChildren(el("div","empty", lastLoad ? "No recent stories for this interest." : "Loading headlines…")); return; }
   const nodes = [];
@@ -320,6 +330,14 @@ $("sug").replaceChildren(...SUGGEST.map(s => { const b = el("button", null, s); 
   b.onclick = () => { const cur = parseInterests($("wint").value), has = cur.some(x => x.toLowerCase() === s.toLowerCase());
     $("wint").value = (has ? cur.filter(x => x.toLowerCase() !== s.toLowerCase()) : [...cur, s]).join(", ");
     b.classList.toggle("on", !has); }; return b; }));
+// "Top headlines" button under the interest box: adds/removes it as an interest. Off unless clicked.
+function bindTop(btn, ta, sep) {
+  const sync = () => { const on = parseInterests(ta.value).includes(TOP); btn.classList.toggle("on", on);
+    btn.textContent = on ? "✓ Top headlines added — click to remove" : "🔥 Add “Top headlines” — each publisher's biggest stories (optional)"; };
+  btn.onclick = () => { const cur = parseInterests(ta.value); ta.value = (cur.includes(TOP) ? cur.filter(x => x !== TOP) : [...cur, TOP]).join(sep); sync(); };
+  ta.addEventListener("input", sync); sync(); return sync;
+}
+const syncWelcomeTop = bindTop($("wtop"), $("wint"), ", "), syncDialogTop = bindTop($("ptop"), $("pint"), "\n");
 function showWelcome() {
   $("welcome").classList.remove("out"); $("welcome").hidden = false; setTimeout(() => $("wname").focus(), 300);
   fillCountrySelect($("wcountry"), $("wcountry").value);
@@ -338,7 +356,7 @@ function openDialog(p) {
   editingId = p?.id || null;
   $("dtitle").textContent = p ? "Edit persona" : "New persona";
   $("pname").value = p?.name || ""; $("pint").value = p?.interests.join("\n") || "";
-  $("ddel").hidden = !p; fillCountrySelect($("pcountry"), p ? p.country : "");
+  syncDialogTop(); $("ddel").hidden = !p; fillCountrySelect($("pcountry"), p ? p.country : "");
   $("dlg").showModal();
   countriesReady.then(() => fillCountrySelect($("pcountry"), $("pcountry").value || (p ? p.country : "")));
 }
