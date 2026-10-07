@@ -35,9 +35,33 @@ export function parseRss(xml) {
     if (image.startsWith("//")) image = "https:" + image;
     if (image.includes("bing.com/th")) image += "&w=640&h=360&c=7&rs=2";   // ask Bing for a 16:9 crop
     if (!/^https:\/\//.test(image)) image = "";
-    if (title && /^https?:\/\//.test(url)) items.push({ title, url, source, image, ts: Math.floor(ts / 1000) });
+    if (title && isEnglish(title) && /^https?:\/\//.test(url)) items.push({ title, url, source, image, ts: Math.floor(ts / 1000) });
   }
   return items.sort((a, b) => b.ts - a.ts).slice(0, MAX_ITEMS);
+}
+
+// Belt-and-braces English filter (the feeds are already requested in the English edition).
+// Rejects titles in non-Latin scripts, and Latin-script titles with more common foreign
+// function words (es/fr/de/it/pt/nl/id) than English ones. Neutral titles are kept.
+const EN = new Set("the of and to in for on is are as at with by from after over amid new says will how why what who".split(" "));
+const NON_EN = new Set(("el la los las del y en un una por para con que se es su al lo como más "
+  + "le les des du et est pour dans sur avec une qui pas au aux ce cette "
+  + "der die das und ist nicht mit von zu den dem ein eine für auf im auch sich "
+  + "il di che per della delle sono più "
+  + "os as uma não com do da dos das em "
+  + "het een van niet voor op met zijn "
+  + "yang dan di untuk dengan ini itu dari pada").split(" "));
+export function isEnglish(title) {
+  const letters = title.match(/\p{L}/gu) || [];
+  if (!letters.length) return false;
+  const latin = letters.filter((c) => /\p{Script=Latin}/u.test(c)).length;
+  if (latin / letters.length < 0.9) return false;
+  let en = 0, foreign = 0;
+  for (const w of title.toLowerCase().match(/\p{L}+/gu) || []) {
+    if (EN.has(w)) en++;
+    else if (NON_EN.has(w)) foreign++;
+  }
+  return foreign <= en;
 }
 
 const json = (body, status = 200, extra = {}) =>
@@ -51,7 +75,7 @@ const json = (body, status = 200, extra = {}) =>
 // blocked (datacenter IPs are sometimes refused) doesn't empty the dashboard.
 const HEADERS = { "User-Agent": "Mozilla/5.0 (compatible; NewsDashboard/1.0)", Accept: "application/rss+xml, text/xml, */*" };
 const CF = { cacheTtl: CACHE_SECONDS, cacheEverything: true };
-const bingUrl = (q) => `https://www.bing.com/news/search?q=${encodeURIComponent(q)}&format=rss&qft=sortbydate%3d%221%22`;
+const bingUrl = (q) => `https://www.bing.com/news/search?q=${encodeURIComponent(q)}&format=rss&setmkt=en-US&setlang=en&qft=sortbydate%3d%221%22`;
 const googleUrl = (q, days) => `https://news.google.com/rss/search?q=${encodeURIComponent(`${q} when:${days}d`)}&hl=en-US&gl=US&ceid=US:en`;
 
 async function pull(name, urls) {

@@ -39,6 +39,7 @@ Local preview: `npm run dev` (http://localhost:8787). Tests: `npm test`.
 | Shareable link | The `workers.dev` URL above (or attach your own domain later). |
 | Remember each person's interests | Saved in the visitor's browser (`localStorage`); no re-entry on later visits. |
 | Persona on another device | **Share** button copies a link containing the persona; opening it offers *Save*. |
+| English only | Both feeds are requested in their English edition, and the Worker also drops any story whose title is in another language. |
 | Refresh every hour | The page reloads feeds every 60 min (and when a sleeping tab wakes); the Worker's upstream fetch is edge-cached for 60 min, so everyone sees the same hourly snapshot. |
 
 ## Capacity & limits (free tier)

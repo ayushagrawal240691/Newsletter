@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { parseRss, handleNews } from "../src/worker.js";
+import { parseRss, handleNews, isEnglish } from "../src/worker.js";
 
 const RSS = `<rss><channel>
 <item><title>Chip &amp; AI boom - Example Wire</title><link>https://example.com/1</link>
@@ -76,4 +76,20 @@ test("accepts the term in the URL path", async () => {
   globalThis.fetch = async () => new Response(RSS);
   const r = await handleNews(new Request("https://app.test/api/news/Trends%20in%20Data%20%26%20AI"));
   assert.equal((await r.json()).query, "trends in data & ai");
+});
+
+test("isEnglish keeps English and drops other languages", () => {
+  for (const ok of ["Nvidia earnings beat estimates", "Markets rally on tech earnings", "Jio's next chapter: Taking technology to the world", "AI", "India Inc. says GST cuts will help"])
+    assert.ok(isEnglish(ok), ok);
+  for (const bad of ["भारत में एआई स्टार्टअप को रिकॉर्ड फंडिंग", "人工智能市场增长", "Новости искусственного интеллекта",
+    "El mercado de la inteligencia artificial crece en España", "Le marché de l'IA en France pour les entreprises", "Der Markt für KI wächst und die Preise sind hoch"])
+    assert.ok(!isEnglish(bad), bad);
+});
+
+test("non-English stories are dropped from feeds", () => {
+  const xml = `<rss><channel>
+<item><title>AI funding hits record</title><link>https://a.example/1</link></item>
+<item><title>भारत में एआई स्टार्टअप को रिकॉर्ड फंडिंग</title><link>https://a.example/2</link></item>
+</channel></rss>`;
+  assert.deepEqual(parseRss(xml).map((i) => i.url), ["https://a.example/1"]);
 });
